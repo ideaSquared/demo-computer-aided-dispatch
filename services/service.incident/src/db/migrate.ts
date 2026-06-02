@@ -13,10 +13,16 @@ const HERE = resolve(fileURLToPath(import.meta.url), '..');
  * services can share a physical Postgres without colliding.
  */
 export async function migrate(opts: { databaseUrl: string; schema: string }): Promise<void> {
+  // `createSchema: true` issues `CREATE SCHEMA IF NOT EXISTS <schema>`
+  // BEFORE creating the pgmigrations bookkeeping table inside it. Without
+  // it the runner crashes on a fresh DB ("schema does not exist") because
+  // it tries to put pgmigrations in our schema before our own init.ts
+  // migration has had a chance to create it.
   const result = await runner({
     databaseUrl: opts.databaseUrl,
     schema: opts.schema,
     migrationsSchema: opts.schema,
+    createSchema: true,
     migrationsTable: 'pgmigrations',
     dir: resolve(HERE, 'migrations'),
     direction: 'up',
