@@ -1,0 +1,36 @@
+# @cad/{{name}}
+
+Node + Fastify service scaffolded by `pnpm new-service`.
+
+## Notion PRD
+
+_TODO: paste the Notion PRD URL for this service. PR 1 created stubs at `docs/prd/`._
+
+## Dev
+
+```bash
+pnpm dev:deps                            # Postgres + Redis + NATS + Jaeger
+pnpm --filter @cad/{{name}} dev          # watch mode (tsx)
+```
+
+## Build
+
+```bash
+pnpm --filter @cad/{{name}} build
+```
+
+## Test
+
+```bash
+pnpm --filter @cad/{{name}} test
+pnpm --filter @cad/{{name}} typecheck
+```
+
+## Conventions
+
+- `src/index.ts` MUST call `initTracing()` BEFORE any other import.
+- Config via `@cad/config` + a Zod schema. No `process.env.X` reads outside `src/config.ts`.
+- Events through `@cad/events` so the envelope, validation, and OTel context propagation come for free.
+- One Postgres schema, owned by this service. No cross-schema joins — call the owner's gRPC API or consume its events.
+
+See `.claude/skills/new-service`, `.claude/skills/otel-trace`, `.claude/skills/nats-event`.

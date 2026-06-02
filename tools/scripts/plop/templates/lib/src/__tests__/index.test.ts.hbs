@@ -1,0 +1,8 @@
+import { describe, expect, it } from 'vitest';
+import { NAME } from '../index.js';
+
+describe('@cad/{{name}}', () => {
+  it('exposes its name constant', () => {
+    expect(NAME).toBe('{{name}}');
+  });
+});

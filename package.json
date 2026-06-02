@@ -1,0 +1,45 @@
+{
+  "name": "@cad/root",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@9.15.9",
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev --parallel",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write .",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "clean": "turbo run clean && rm -rf node_modules .turbo",
+    "new-app": "tsx tools/scripts/plop/run.ts app",
+    "new-lib": "tsx tools/scripts/plop/run.ts lib",
+    "new-service": "tsx tools/scripts/plop/run.ts service",
+    "proto:gen": "pnpm --filter @cad/proto run gen",
+    "smoke": "tsx tools/scripts/smoke.ts",
+    "dev:deps": "docker compose -f infra/docker-compose.deps.yml up -d",
+    "dev:deps:down": "docker compose -f infra/docker-compose.deps.yml down",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "@commitlint/cli": "^19.6.1",
+    "@commitlint/config-conventional": "^19.6.0",
+    "@commitlint/types": "^19.5.0",
+    "@types/node": "^20.17.10",
+    "husky": "^9.1.7",
+    "lint-staged": "^15.2.11",
+    "plop": "^4.0.1",
+    "tsx": "^4.19.2",
+    "turbo": "^2.3.3",
+    "typescript": "^5.7.2"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,js,jsx,json,md,yml,yaml,css.ts}": ["biome check --write --no-errors-on-unmatched"]
+  }
+}

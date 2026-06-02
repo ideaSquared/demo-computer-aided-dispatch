@@ -1,0 +1,21 @@
+# Paste this entry under `services:` in infra/docker-compose.yml.
+# The slug-based port pick assumes the existing range — adjust if it collides.
+
+service-{{slug}}:
+  build:
+    context: ..
+    dockerfile: services/{{name}}/Dockerfile
+  environment:
+    NODE_ENV: development
+    OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+    DATABASE_URL: postgres://cad:cad@postgres:5432/cad
+    NATS_URL: nats://nats:4222
+    REDIS_URL: redis://redis:6379
+  depends_on:
+    postgres:
+      condition: service_healthy
+    nats:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+  restart: unless-stopped

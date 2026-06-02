@@ -1,0 +1,14 @@
+import { Button, Stack } from '@cad/lib.ui';
+import * as styles from './App.css.js';
+
+export function App(): JSX.Element {
+  return (
+    <main className={styles.shell}>
+      <Stack gap="16" align="start">
+        <h1>@cad/{{name}}</h1>
+        <p>Scaffolded by <code>pnpm new-app</code>. Replace this with the real UI.</p>
+        <Button intent="primary" onClick={() => console.log('click')}>Action</Button>
+      </Stack>
+    </main>
+  );
+}

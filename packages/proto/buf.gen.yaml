@@ -1,0 +1,10 @@
+version: v2
+plugins:
+  - remote: buf.build/community/stephenh-ts-proto
+    out: gen/ts
+    opt:
+      - esModuleInterop=true
+      - outputServices=grpc-js
+      - useExactTypes=false
+  - remote: buf.build/protocolbuffers/python
+    out: gen/py
