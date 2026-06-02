@@ -89,6 +89,12 @@ services:
         - { action: rebuild, path: ../packages }
         - { action: rebuild, path: ../pnpm-lock.yaml }
 
+  # Stateless recommender — only dials service-incident + service-resource over
+  # gRPC, lazily. The shared *dev-build anchor still pulls in depends_on for
+  # postgres/nats/redis and *dev-env still injects NATS_URL/REDIS_URL; we keep
+  # both rather than duplicate the anchor's contents. The service ignores the
+  # unused env (config.ts doesn't read it), and the prod stack
+  # (docker-compose.yml) reflects the honest dep set. See compose.fragment.yml.
   service-dispatch:
     <<: *dev-build
     command: pnpm --filter @cad/service.dispatch dev

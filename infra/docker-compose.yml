@@ -81,6 +81,10 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # Stateless recommender — no Postgres / NATS / Redis. Its only deps are gRPC
+  # out to service-incident + service-resource, dialled lazily; no compose-level
+  # depends_on for those (neither has a healthcheck declared, and gateway
+  # follows the same lazy-dial pattern). See compose.fragment.yml.
   service-dispatch:
     build:
       context: ..
@@ -93,17 +97,8 @@ services:
       PORT: "5030"
       GRPC_PORT: "5031"
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
-      NATS_URL: nats://nats:4222
-      REDIS_URL: redis://redis:6379
       INCIDENT_GRPC_URL: service-incident:5021
       RESOURCE_GRPC_URL: service-resource:5041
-    depends_on:
-      postgres:
-        condition: service_healthy
-      nats:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
     restart: unless-stopped
 
   service-resource:

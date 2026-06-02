@@ -1,4 +1,14 @@
 # Paste this entry under `services:` in infra/docker-compose.yml.
+#
+# service.dispatch is the recommender — fully stateless. No Postgres, no NATS,
+# no Redis. Its only dependencies are gRPC calls out to service-incident (5021)
+# and service-resource (5041). The gRPC clients are channel-based and lazy
+# (construction does no I/O; the channel dials on first RPC), so we do NOT
+# declare `depends_on: service-incident/service-resource` — neither has a
+# `healthcheck:` in compose anyway, and `condition: service_started` would
+# only enforce process-start ordering, not readiness. This mirrors how
+# service-gateway dials its downstream gRPC services lazily without a
+# compose-level dependency.
 
 service-dispatch:
   build:
@@ -12,15 +22,6 @@ service-dispatch:
     PORT: "5030"
     GRPC_PORT: "5031"
     OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
-    NATS_URL: nats://nats:4222
-    REDIS_URL: redis://redis:6379
     INCIDENT_GRPC_URL: service-incident:5021
     RESOURCE_GRPC_URL: service-resource:5041
-  depends_on:
-      postgres:
-        condition: service_healthy
-      nats:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
   restart: unless-stopped
