@@ -1,8 +1,10 @@
 import { Button, Stack } from '@cad/lib.ui';
 import { type FormEvent, useState } from 'react';
+import type { UseFleetResult } from '../fleet/useFleet.js';
 import type { Identity } from '../presence/identity.js';
 import type { Incident, Severity, Tier } from '../services/incident.js';
 import { TIERS } from '../services/incident.js';
+import type { Unit } from '../services/units.js';
 import { bindIncidentActions, IncidentActions } from './IncidentActions.js';
 import * as styles from './IncidentBoard.css.js';
 import type { UseIncidentsResult } from './useIncidents.js';
@@ -13,10 +15,13 @@ export interface IncidentBoardProps {
   readonly identity: Identity;
   /** Shared incident data source, lifted to the shell so board and map stay in sync. */
   readonly incidents: UseIncidentsResult;
+  /** Shared fleet roster, lifted to the shell so the dispatch picker lists live units. */
+  readonly fleet: UseFleetResult;
 }
 
-export function IncidentBoard({ identity, incidents: source }: IncidentBoardProps) {
+export function IncidentBoard({ identity, incidents: source, fleet }: IncidentBoardProps) {
   const { incidents, loading, error, create } = source;
+  const { units } = fleet;
 
   return (
     <Stack gap="24">
@@ -49,6 +54,7 @@ export function IncidentBoard({ identity, incidents: source }: IncidentBoardProp
               <IncidentRow
                 key={incident.id}
                 incident={incident}
+                units={units}
                 {...bindIncidentActions(source, incident, identity.operatorId)}
               />
             ))
@@ -119,6 +125,7 @@ function NewIncidentForm({
 
 function IncidentRow({
   incident,
+  units,
   onTriage,
   onDispatch,
   onArrival,
@@ -126,6 +133,7 @@ function IncidentRow({
   onCancel,
 }: {
   incident: Incident;
+  units: ReadonlyArray<Unit>;
   onTriage: (severity: Severity) => void;
   onDispatch: (unitIds: ReadonlyArray<string>) => void;
   onArrival: (unitId: string) => void;
@@ -152,6 +160,7 @@ function IncidentRow({
       <div className={styles.actions}>
         <IncidentActions
           incident={incident}
+          units={units}
           onTriage={onTriage}
           onDispatch={onDispatch}
           onArrival={onArrival}

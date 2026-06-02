@@ -1,9 +1,11 @@
 import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { useFleet } from '../../fleet/useFleet.js';
 import { useIncidents } from '../../incidents/useIncidents.js';
 import type { Identity } from '../../presence/identity.js';
 import type { Incident, IncidentApi } from '../../services/incident.js';
+import type { Unit, UnitApi } from '../../services/units.js';
 import { IncidentMap } from '../IncidentMap.js';
 
 const identity: Identity = { operatorId: 'alex', displayName: 'Alex', tier: 'fire' };
@@ -39,12 +41,37 @@ function makeApi(over: Partial<IncidentApi> = {}): IncidentApi {
   };
 }
 
+function makeUnit(over: Partial<Unit> = {}): Unit {
+  return {
+    id: 'u1',
+    callsign: 'Engine 7',
+    tier: 'fire',
+    status: 'available',
+    incidentId: null,
+    location: { lat: 51.51, lng: -0.09 },
+    updatedAt: '2026-06-02T10:00:00.000Z',
+    version: 0,
+    ...over,
+  };
+}
+
+function makeUnitApi(over: Partial<UnitApi> = {}): UnitApi {
+  return {
+    list: vi.fn(async () => [] as ReadonlyArray<Unit>),
+    get: vi.fn(async () => makeUnit()),
+    register: vi.fn(async () => makeUnit()),
+    setStatus: vi.fn(async () => makeUnit()),
+    ...over,
+  };
+}
+
 const noopSubscribe = () => () => undefined;
 
-/** Mount the map through the real hook wired to a mock api, as the shell does. */
-function MapHarness({ api }: { api: IncidentApi }) {
+/** Mount the map through the real hooks wired to mock apis, as the shell does. */
+function MapHarness({ api, unitApi }: { api: IncidentApi; unitApi?: UnitApi }) {
   const incidents = useIncidents({ subscribe: noopSubscribe, api });
-  return <IncidentMap identity={identity} incidents={incidents} />;
+  const fleet = useFleet({ subscribe: noopSubscribe, api: unitApi ?? makeUnitApi() });
+  return <IncidentMap identity={identity} incidents={incidents} fleet={fleet} />;
 }
 
 afterEach(cleanup);
@@ -120,5 +147,59 @@ describe('IncidentMap', () => {
         triagedBy: 'alex',
       }),
     );
+  });
+
+  it('renders a marker for each locatable unit', async () => {
+    const api = makeApi({ list: vi.fn(async () => [] as ReadonlyArray<Incident>) });
+    const unitApi = makeUnitApi({
+      list: vi.fn(async () => [
+        makeUnit({ id: 'u1', callsign: 'Engine 7', location: { lat: 51.51, lng: -0.09 } }),
+        makeUnit({ id: 'u2', callsign: 'Pump 2', location: { lat: 51.52, lng: -0.08 } }),
+      ]),
+    });
+    render(<MapHarness api={api} unitApi={unitApi} />);
+
+    expect(await screen.findByRole('button', { name: 'unit Engine 7' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'unit Pump 2' })).toBeInTheDocument();
+  });
+
+  it('lists a null-location unit off-map, not on the canvas', async () => {
+    const api = makeApi({ list: vi.fn(async () => [] as ReadonlyArray<Incident>) });
+    const unitApi = makeUnitApi({
+      list: vi.fn(async () => [
+        makeUnit({ id: 'u1', callsign: 'Engine 7', location: { lat: 51.51, lng: -0.09 } }),
+        makeUnit({ id: 'u2', callsign: 'Medic 3', location: null }),
+      ]),
+    });
+    render(<MapHarness api={api} unitApi={unitApi} />);
+
+    await screen.findByRole('button', { name: 'unit Engine 7' });
+
+    // The off-map unit has no canvas marker…
+    expect(screen.queryByRole('button', { name: 'unit Medic 3' })).not.toBeInTheDocument();
+    // …but it appears in the off-map units list and the count reflects it.
+    expect(screen.getByText('Medic 3')).toBeInTheDocument();
+    expect(screen.getByText('units off-map (1)')).toBeInTheDocument();
+  });
+
+  it('shows a unit popover when its marker is clicked', async () => {
+    const api = makeApi({ list: vi.fn(async () => [] as ReadonlyArray<Incident>) });
+    const unitApi = makeUnitApi({
+      list: vi.fn(async () => [
+        makeUnit({
+          id: 'u1',
+          callsign: 'Engine 7',
+          status: 'dispatched',
+          incidentId: 'i9',
+          location: { lat: 51.51, lng: -0.09 },
+        }),
+      ]),
+    });
+    render(<MapHarness api={api} unitApi={unitApi} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'unit Engine 7' }));
+
+    expect(screen.getByRole('heading', { name: 'Engine 7' })).toBeInTheDocument();
+    expect(screen.getByText('i9')).toBeInTheDocument();
   });
 });
