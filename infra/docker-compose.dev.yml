@@ -71,12 +71,14 @@ services:
   service-incident:
     <<: *dev-build
     command: pnpm --filter @cad/service.incident dev
-    ports: ["5020:5020"]
+    ports: ["5020:5020", "5021:5021"]
     environment:
       <<: *dev-env
       PORT: "5020"
+      GRPC_PORT: "5021"
       DATABASE_URL: postgres://cad:cad@postgres:5432/cad
       DB_SCHEMA: incident
+      MIGRATE_ON_BOOT: "true"
     develop:
       watch:
         - { action: sync, path: ../services/service.incident/src, target: /app/services/service.incident/src }

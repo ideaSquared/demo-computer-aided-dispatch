@@ -21,6 +21,21 @@ export function topicsFor(subject: string, payload: unknown): string[] {
       const operatorId = typeof p.operatorId === 'string' ? p.operatorId : undefined;
       return operatorId ? ['presence', `operator:${operatorId}`] : ['presence'];
     }
+    // Every incident lifecycle event fans out to a shared `incidents` scope
+    // topic (for the board view that lists everything) plus an
+    // `incident:<id>` topic (for a console drilled into one incident). Both
+    // are needed: the board can't bind 1-to-N subscriptions, and the
+    // drilldown can't filter a firehose efficiently.
+    case subjects.IncidentOpened:
+    case subjects.IncidentTriaged:
+    case subjects.IncidentDispatched:
+    case subjects.IncidentUnitArrived:
+    case subjects.IncidentResolved:
+    case subjects.IncidentCancelled: {
+      const p = payload as { incidentId?: unknown };
+      const incidentId = typeof p.incidentId === 'string' ? p.incidentId : undefined;
+      return incidentId ? ['incidents', `incident:${incidentId}`] : ['incidents'];
+    }
     default:
       return [];
   }

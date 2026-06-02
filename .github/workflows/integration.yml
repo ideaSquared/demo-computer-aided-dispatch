@@ -12,6 +12,7 @@ on:
       - "infra/**"
       - "tools/scripts/smoke.ts"
       - "tools/scripts/ws-smoke.ts"
+      - "tools/scripts/grpc-smoke.ts"
       - ".dockerignore"
 
 concurrency:
@@ -59,6 +60,13 @@ jobs:
           echo '::endgroup::'
       - name: Smoke
         run: pnpm smoke
+      # The gRPC smoke runs on the host (tsx) and imports @cad/proto, whose
+      # exports.import points at dist/index.js. The Docker images build their
+      # own bundles, but the host workspace doesn't unless we ask for it.
+      - name: Build proto bundle for host smoke
+        run: pnpm --filter @cad/proto build
+      - name: gRPC smoke (incident)
+        run: pnpm smoke:grpc
       - name: Dump container logs on failure
         if: failure()
         run: |
@@ -123,6 +131,15 @@ jobs:
       # Two clients, B receives A's setStatus event via the spine.
       - name: WebSocket smoke
         run: pnpm smoke:ws
+      # Phase 2 end-to-end: gRPC client → incident-service → Postgres tx,
+      # then incident.opened → NATS subscriber. Asserts the full lifecycle
+      # + that the NATS publish-after-commit path actually fires.
+      # @cad/proto must be bundled on the host for tsx to resolve its
+      # `import` export condition (see same step in the smoke job).
+      - name: Build proto bundle for host smoke
+        run: pnpm --filter @cad/proto build
+      - name: gRPC smoke (incident)
+        run: pnpm smoke:grpc
       - name: Dump container logs on failure
         if: failure()
         run: |

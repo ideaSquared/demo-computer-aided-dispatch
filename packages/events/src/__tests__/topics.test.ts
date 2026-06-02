@@ -17,4 +17,19 @@ describe('topicsFor', () => {
   it('returns an empty list for unmapped subjects', () => {
     expect(topicsFor('something.unrelated', {})).toEqual([]);
   });
+
+  it.each([
+    subjects.IncidentOpened,
+    subjects.IncidentTriaged,
+    subjects.IncidentDispatched,
+    subjects.IncidentUnitArrived,
+    subjects.IncidentResolved,
+    subjects.IncidentCancelled,
+  ])('maps %s to the incidents scope + an incident-scoped topic', (subject) => {
+    expect(topicsFor(subject, { incidentId: 'inc-42' })).toEqual(['incidents', 'incident:inc-42']);
+  });
+
+  it('falls back to scope-only when an incident event has no incidentId', () => {
+    expect(topicsFor(subjects.IncidentOpened, {})).toEqual(['incidents']);
+  });
 });
