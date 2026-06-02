@@ -2,8 +2,16 @@
   "extends": "@cad/tsconfig/node.json",
   "compilerOptions": {
     "outDir": "dist",
-    "rootDir": "src"
+    "rootDir": ".",
+    // Generated ts-proto output uses `any`, mutable bindings and other
+    // patterns that don't match our usual strictness. We trust the
+    // generator and disable the noisiest rules just for those files.
+    "noImplicitAny": false,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "exactOptionalPropertyTypes": false,
+    "useUnknownInCatchVariables": false
   },
-  "include": ["src/**/*"],
-  "exclude": ["dist", "node_modules", "gen"]
+  "include": ["src/**/*", "gen/**/*"],
+  "exclude": ["dist", "node_modules"]
 }

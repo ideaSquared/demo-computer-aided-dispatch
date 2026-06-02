@@ -1,6 +1,14 @@
 version: v2
+# Exclude node_modules — otherwise buf discovers half-broken .proto
+# fixtures shipped inside @grpc/grpc-js and protobufjs and the lint pass
+# blows up on them. Imports are still resolved from the module root so
+# `import "cad/common/v1/geo.proto"` works.
 modules:
   - path: .
+    excludes:
+      - node_modules
+      - gen
+      - dist
 lint:
   use:
     - STANDARD

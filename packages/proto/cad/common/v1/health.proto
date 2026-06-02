@@ -2,21 +2,22 @@
 //
 // We mirror the grpc.health.v1.HealthCheck surface so standard probes work,
 // but expose it under cad.common.v1 to keep all generated clients under a
-// single root package.
+// single root package. Names follow buf STANDARD (CheckRequest/CheckResponse,
+// not HealthCheckRequest) so the codegen output is idiomatic per-RPC.
 
 syntax = "proto3";
 
 package cad.common.v1;
 
 service HealthService {
-  rpc Check(HealthCheckRequest) returns (HealthCheckResponse);
+  rpc Check(CheckRequest) returns (CheckResponse);
 }
 
-message HealthCheckRequest {
+message CheckRequest {
   string service = 1;
 }
 
-message HealthCheckResponse {
+message CheckResponse {
   enum ServingStatus {
     SERVING_STATUS_UNSPECIFIED = 0;
     SERVING_STATUS_SERVING = 1;

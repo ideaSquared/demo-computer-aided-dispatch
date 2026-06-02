@@ -1,0 +1,156 @@
+// service.incident — event-sourced aggregate. State machine per the PRD:
+//
+//   open → triaged → dispatched → enRoute → onScene → resolved
+//                 ↘ cancelled
+//
+// Each RPC has its own Request/Response wrapper so individual methods can
+// grow fields without forcing a v2 (buf STANDARD enforces this). The
+// `Incident` payload lives inside every response. See
+// .claude/skills/event-sourcing.
+
+syntax = "proto3";
+
+package cad.incident.v1;
+
+import "cad/common/v1/geo.proto";
+
+service IncidentService {
+  rpc Open(OpenRequest) returns (OpenResponse);
+  rpc Triage(TriageRequest) returns (TriageResponse);
+  rpc Dispatch(DispatchRequest) returns (DispatchResponse);
+  rpc RecordUnitArrival(RecordUnitArrivalRequest) returns (RecordUnitArrivalResponse);
+  rpc Resolve(ResolveRequest) returns (ResolveResponse);
+  rpc Cancel(CancelRequest) returns (CancelResponse);
+  rpc Get(GetRequest) returns (GetResponse);
+  rpc ListOpen(ListOpenRequest) returns (ListOpenResponse);
+}
+
+// ---- requests --------------------------------------------------------------
+
+message OpenRequest {
+  string title = 1;
+  ServiceTier tier = 2;
+  cad.common.v1.GeoPoint location = 3;
+  string opened_by = 4;  // operatorId stub; Phase-4 auth replaces this.
+}
+
+message TriageRequest {
+  string id = 1;
+  Severity severity = 2;
+  int64 expected_version = 3;  // optimistic concurrency.
+  string triaged_by = 4;
+}
+
+message DispatchRequest {
+  string id = 1;
+  repeated string unit_ids = 2;
+  int64 expected_version = 3;
+  string dispatched_by = 4;
+}
+
+message RecordUnitArrivalRequest {
+  string id = 1;
+  string unit_id = 2;
+  int64 expected_version = 3;
+}
+
+message ResolveRequest {
+  string id = 1;
+  int64 expected_version = 2;
+  string resolved_by = 3;
+}
+
+message CancelRequest {
+  string id = 1;
+  int64 expected_version = 2;
+  string cancelled_by = 3;
+  string reason = 4;
+}
+
+message GetRequest {
+  string id = 1;
+}
+
+message ListOpenRequest {
+  // Optional tier filter — empty/UNSPECIFIED returns every open incident.
+  ServiceTier tier = 1;
+  int32 limit = 2;
+}
+
+// ---- responses -------------------------------------------------------------
+
+message OpenResponse {
+  Incident incident = 1;
+}
+
+message TriageResponse {
+  Incident incident = 1;
+}
+
+message DispatchResponse {
+  Incident incident = 1;
+}
+
+message RecordUnitArrivalResponse {
+  Incident incident = 1;
+}
+
+message ResolveResponse {
+  Incident incident = 1;
+}
+
+message CancelResponse {
+  Incident incident = 1;
+}
+
+message GetResponse {
+  Incident incident = 1;
+}
+
+message ListOpenResponse {
+  repeated Incident incidents = 1;
+}
+
+// ---- domain shape ----------------------------------------------------------
+
+message Incident {
+  string id = 1;
+  string title = 2;
+  ServiceTier tier = 3;
+  IncidentState state = 4;
+  Severity severity = 5;
+  cad.common.v1.GeoPoint location = 6;
+  repeated string unit_ids = 7;
+  repeated string units_on_scene = 8;
+  string opened_at = 9;   // RFC3339; envelope timestamps stay strings on the wire.
+  string updated_at = 10;
+  int64 version = 11;
+}
+
+// ---- enums -----------------------------------------------------------------
+
+enum ServiceTier {
+  SERVICE_TIER_UNSPECIFIED = 0;
+  SERVICE_TIER_POLICE = 1;
+  SERVICE_TIER_MEDICAL = 2;
+  SERVICE_TIER_FIRE = 3;
+}
+
+enum Severity {
+  SEVERITY_UNSPECIFIED = 0;
+  SEVERITY_LOW = 1;
+  SEVERITY_MEDIUM = 2;
+  SEVERITY_HIGH = 3;
+  SEVERITY_CRITICAL = 4;
+}
+
+enum IncidentState {
+  INCIDENT_STATE_UNSPECIFIED = 0;
+  INCIDENT_STATE_OPEN = 1;
+  INCIDENT_STATE_TRIAGED = 2;
+  INCIDENT_STATE_DISPATCHED = 3;
+  INCIDENT_STATE_EN_ROUTE = 4;
+  INCIDENT_STATE_ON_SCENE = 5;
+  INCIDENT_STATE_RESOLVED = 6;
+  INCIDENT_STATE_CANCELLED = 7;
+}

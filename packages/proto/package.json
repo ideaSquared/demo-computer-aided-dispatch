@@ -18,15 +18,21 @@
     "cad"
   ],
   "scripts": {
-    "build": "tsup",
-    "typecheck": "tsc --noEmit",
-    "test": "vitest run",
-    "gen": "echo 'TODO: wire buf generate once services land in PR 3 \u2014 see .claude/skills/grpc-contract'",
-    "lint:proto": "echo 'TODO: buf lint && buf breaking \u2014 wire in PR 3'",
+    "build": "pnpm gen && tsup",
+    "typecheck": "pnpm gen && tsc --noEmit",
+    "test": "pnpm gen && vitest run",
+    "gen": "buf generate",
+    "lint:proto": "buf lint",
     "clean": "rm -rf dist gen .turbo"
   },
+  "dependencies": {
+    "@bufbuild/protobuf": "^2.10.0",
+    "@grpc/grpc-js": "^1.13.6"
+  },
   "devDependencies": {
+    "@bufbuild/buf": "^1.70.0",
     "@cad/tsconfig": "workspace:*",
+    "ts-proto": "^2.7.0",
     "tsup": "^8.5.1",
     "typescript": "^6.0.3",
     "vitest": "^4.1.8"
