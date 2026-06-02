@@ -41,6 +41,19 @@ export type {
 } from '../gen/ts/cad/incident/v1/incident.js';
 export * as IncidentV1 from '../gen/ts/cad/incident/v1/incident.js';
 
+export type {
+  GetUnitRequest,
+  GetUnitResponse,
+  ListUnitsRequest,
+  ListUnitsResponse,
+  RegisterUnitRequest,
+  RegisterUnitResponse,
+  Unit,
+  UpdateStatusRequest,
+  UpdateStatusResponse,
+} from '../gen/ts/cad/resource/v1/resource.js';
+export * as ResourceV1 from '../gen/ts/cad/resource/v1/resource.js';
+
 // Hand-rolled health constants kept for any callers still using the v0
 // scaffold from before codegen landed. New code should use
 // `HealthV1.HealthServiceClient` etc.

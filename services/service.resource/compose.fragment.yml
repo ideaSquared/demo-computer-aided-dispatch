@@ -5,13 +5,16 @@ service-resource:
     context: ..
     dockerfile: services/service.resource/Dockerfile
   ports:
-    - "5040:5040"
+    - "5040:5040"   # HTTP /health
+    - "5041:5041"   # gRPC ResourceService
   environment:
     NODE_ENV: development
     PORT: "5040"
+    GRPC_PORT: "5041"
     OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
     DATABASE_URL: postgres://cad:cad@postgres:5432/cad
     DB_SCHEMA: resource
+    MIGRATE_ON_BOOT: "true"
     NATS_URL: nats://nats:4222
     REDIS_URL: redis://redis:6379
   depends_on:

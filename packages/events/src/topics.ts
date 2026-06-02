@@ -36,6 +36,14 @@ export function topicsFor(subject: string, payload: unknown): string[] {
       const incidentId = typeof p.incidentId === 'string' ? p.incidentId : undefined;
       return incidentId ? ['incidents', `incident:${incidentId}`] : ['incidents'];
     }
+    // Unit lifecycle mirrors incidents: a shared `units` scope topic (for the
+    // fleet board) plus a `unit:<id>` topic (for a console watching one unit).
+    case subjects.UnitRegistered:
+    case subjects.UnitStatusChanged: {
+      const p = payload as { unitId?: unknown };
+      const unitId = typeof p.unitId === 'string' ? p.unitId : undefined;
+      return unitId ? ['units', `unit:${unitId}`] : ['units'];
+    }
     default:
       return [];
   }

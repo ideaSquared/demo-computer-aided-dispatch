@@ -10,7 +10,9 @@
     "ws-smoke.ts",
     "grpc-smoke.ts",
     "incident-ws-smoke.ts",
-    "incident-http-smoke.ts"
+    "incident-http-smoke.ts",
+    "resource-http-smoke.ts",
+    "dispatch-loop-smoke.ts"
   ],
   "exclude": ["plop/templates/**"]
 }

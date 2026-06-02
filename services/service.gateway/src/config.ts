@@ -13,6 +13,8 @@ export const config = loadEnv(
     REDIS_URL: z.string().url(), // required: gateway subscribes to Redis pub/sub channels
     // host:port for the incident gRPC service — not a URL, so .url() is wrong.
     INCIDENT_GRPC_URL: z.string().min(1).default('localhost:5021'),
+    // host:port for the resource (units) gRPC service.
+    RESOURCE_GRPC_URL: z.string().min(1).default('localhost:5041'),
     OTEL_EXPORTER_OTLP_ENDPOINT: z.string().url().optional(),
   }),
 );

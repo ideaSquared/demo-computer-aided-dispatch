@@ -18,7 +18,11 @@
     "@cad/events": "workspace:*",
     "@cad/observability": "workspace:*",
     "@cad/proto": "workspace:*",
+    "@grpc/grpc-js": "^1.13.6",
     "fastify": "^5.8.5",
+    "nats": "^2.29.1",
+    "node-pg-migrate": "^8.0.4",
+    "postgres": "^3.4.9",
     "zod": "^4.4.3"
   },
   "devDependencies": {

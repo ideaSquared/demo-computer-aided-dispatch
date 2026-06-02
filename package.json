@@ -27,6 +27,8 @@
     "smoke:grpc": "tsx tools/scripts/grpc-smoke.ts",
     "smoke:incident-ws": "tsx tools/scripts/incident-ws-smoke.ts",
     "smoke:incident-http": "tsx tools/scripts/incident-http-smoke.ts",
+    "smoke:resource-http": "tsx tools/scripts/resource-http-smoke.ts",
+    "smoke:dispatch-loop": "tsx tools/scripts/dispatch-loop-smoke.ts",
     "dev:deps": "docker compose -f infra/docker-compose.deps.yml up -d",
     "dev:deps:down": "docker compose -f infra/docker-compose.deps.yml down",
     "dev:docker": "docker compose -f infra/docker-compose.dev.yml watch",

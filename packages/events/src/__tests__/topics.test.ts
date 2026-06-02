@@ -32,4 +32,15 @@ describe('topicsFor', () => {
   it('falls back to scope-only when an incident event has no incidentId', () => {
     expect(topicsFor(subjects.IncidentOpened, {})).toEqual(['incidents']);
   });
+
+  it.each([
+    subjects.UnitRegistered,
+    subjects.UnitStatusChanged,
+  ])('maps %s to the units scope + a unit-scoped topic', (subject) => {
+    expect(topicsFor(subject, { unitId: 'unit-42' })).toEqual(['units', 'unit:unit-42']);
+  });
+
+  it('falls back to scope-only when a unit event has no unitId', () => {
+    expect(topicsFor(subjects.UnitRegistered, {})).toEqual(['units']);
+  });
 });
