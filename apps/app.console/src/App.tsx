@@ -1,6 +1,8 @@
 import { Stack } from '@cad/lib.ui';
 import { useMemo, useState } from 'react';
 import * as styles from './App.css.js';
+import { FleetPanel } from './fleet/FleetPanel.js';
+import { useFleet } from './fleet/useFleet.js';
 import { IncidentBoard } from './incidents/IncidentBoard.js';
 import { useIncidents } from './incidents/useIncidents.js';
 import { IncidentMap } from './map/IncidentMap.js';
@@ -8,7 +10,7 @@ import { type Identity, readIdentity, wsUrlFor } from './presence/identity.js';
 import { PresenceView } from './presence/PresencePage.js';
 import { useWs } from './ws/useWs.js';
 
-type Tab = 'incidents' | 'map' | 'presence';
+type Tab = 'incidents' | 'map' | 'fleet' | 'presence';
 
 export function App() {
   const identity = useMemo(
@@ -42,6 +44,10 @@ function ConsoleShell({ identity }: { identity: Identity }) {
   // this instance (and the single WS connection above), so they reconcile in
   // lockstep — no second socket, no duplicate fetch/reconcile logic.
   const incidents = useIncidents({ subscribe });
+
+  // Same pattern for the fleet roster: one source on the shared socket, so the
+  // fleet panel reconciles off the `units` topic without a second connection.
+  const fleet = useFleet({ subscribe });
 
   return (
     <main className={styles.shell}>
@@ -79,6 +85,15 @@ function ConsoleShell({ identity }: { identity: Identity }) {
           <button
             type="button"
             role="tab"
+            aria-selected={tab === 'fleet'}
+            className={styles.tab({ active: tab === 'fleet' })}
+            onClick={() => setTab('fleet')}
+          >
+            fleet
+          </button>
+          <button
+            type="button"
+            role="tab"
             aria-selected={tab === 'presence'}
             className={styles.tab({ active: tab === 'presence' })}
             onClick={() => setTab('presence')}
@@ -91,6 +106,8 @@ function ConsoleShell({ identity }: { identity: Identity }) {
           <IncidentBoard identity={identity} incidents={incidents} />
         ) : tab === 'map' ? (
           <IncidentMap identity={identity} incidents={incidents} />
+        ) : tab === 'fleet' ? (
+          <FleetPanel identity={identity} fleet={fleet} />
         ) : (
           <PresenceView status={status} subscribe={subscribe} send={send} />
         )}
