@@ -1,7 +1,10 @@
 import { defineConfig } from 'tsup';
 
 export default defineConfig({
-  entry: ['src/index.ts'],
+  // Migration files are entrypoints too: node-pg-migrate `import()`s them
+  // at runtime by directory scan, so they must each be their own ESM file
+  // in `dist/db/migrations/` rather than getting tree-shaken into index.js.
+  entry: ['src/index.ts', 'src/db/migrations/*.ts'],
   format: ['esm'],
   dts: false,
   sourcemap: true,

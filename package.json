@@ -23,6 +23,7 @@
     "proto:gen": "pnpm --filter @cad/proto run gen",
     "smoke": "tsx tools/scripts/smoke.ts",
     "smoke:ws": "tsx tools/scripts/ws-smoke.ts",
+    "smoke:grpc": "tsx tools/scripts/grpc-smoke.ts",
     "dev:deps": "docker compose -f infra/docker-compose.deps.yml up -d",
     "dev:deps:down": "docker compose -f infra/docker-compose.deps.yml down",
     "dev:docker": "docker compose -f infra/docker-compose.dev.yml watch",

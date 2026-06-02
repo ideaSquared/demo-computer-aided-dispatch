@@ -14,38 +14,68 @@ Notion is the source of truth. This README is a navigation aid only.
 
 ## Status
 
-- **HTTP `/health`** — boot-proven by `pnpm smoke`.
-- **Domain core** (`src/domain/`) — the pure, event-sourced Incident
-  aggregate: `apply`/`fold`, the command functions, domain events, and
-  invariants. No I/O; fully unit-tested. See `.claude/skills/event-sourcing`.
+End-to-end persisted gRPC service:
 
-Still to land (next PR): the persistence layer (migration + event-store
-repository with optimistic concurrency), the gRPC `IncidentService` adapter,
-and the `@cad/events` NATS publishing wired in after commit.
+- HTTP `/health` on `PORT` (5020).
+- gRPC `IncidentService` on `GRPC_PORT` (5021) — every RPC from the proto
+  (`Open` / `Triage` / `Dispatch` / `RecordUnitArrival` / `Resolve` /
+  `Cancel` / `Get` / `ListOpen`). Plus `HealthService.Check` for probes.
+- Postgres event store (`incident_events`) + read-model (`incident_view`)
+  written atomically; optimistic concurrency on `(aggregate_id, version)`.
+- NATS publishes (`incident.*`) AFTER commit, with envelope + version.
 
-## Domain (`src/domain/`)
+## Layout
 
 ```
-domain/
-├── events.ts     # domain event types (the append-only facts)
-├── state.ts      # IncidentState + apply (the fold) + fold (replay)
-├── commands.ts   # open / triage / dispatch / recordUnitArrival / resolve / cancel
-├── errors.ts     # InvariantError (illegal transition)
-└── index.ts      # barrel
+src/
+├── domain/        # pure aggregate (events / state / commands / errors)
+├── db/
+│   ├── migrations/
+│   │   └── 1748880000000_init.ts  # incident_events + incident_view
+│   ├── migrate.ts                 # node-pg-migrate runner
+│   └── repository.ts              # load / append+project / list, with OCC
+├── grpc/
+│   ├── projection.ts              # domain IncidentState → proto Incident
+│   ├── handlers.ts                # the IncidentServiceServer impl
+│   └── server.ts                  # gRPC bootstrap (Incident + Health)
+├── config.ts                      # env contract (Zod)
+├── server.ts                      # migrate → connect → start gRPC + Fastify
+└── index.ts                       # initTracing() → import('./server.js')
 ```
 
-The aggregate is a pure function of its event log. Commands validate a
-transition and return the events to append; `apply` folds events into current
-state. Time is supplied by the command, never read inside `apply`, so replays
-are deterministic. State machine:
+The aggregate (`src/domain/`) is a pure function of its event log. Commands
+validate the transition and return events to append; `apply` folds events
+into current state. Time comes from commands, never from `apply`, so
+replays are deterministic. State machine:
 
 ```
 open → triaged → dispatched → onScene → resolved
                           ↘ cancelled   (from any non-terminal state)
 ```
 
-(`enRoute` exists in the proto enum but no command here produces it yet — it
-will be driven by `service.resource` unit updates in a later phase.)
+(`enRoute` exists in the proto enum but no command here produces it yet —
+it will be driven by `service.resource` unit updates in a later phase.)
+
+## Error mapping
+
+| Origin                             | gRPC status              |
+| ---------------------------------- | ------------------------ |
+| Domain `InvariantError`            | `FAILED_PRECONDITION`    |
+| Repository `ConcurrencyError`      | `ABORTED`                |
+| Read miss in `Get`                 | `NOT_FOUND`              |
+| Everything else                    | `INTERNAL`               |
+
+## Migrations
+
+`MIGRATE_ON_BOOT=true` runs `pnpm --filter @cad/service.incident migrate`
+at startup. Off in production; on locally + in dev-stack CI.
+
+## Smoke
+
+The integration job runs `pnpm smoke:grpc` (`tools/scripts/grpc-smoke.ts`):
+opens a gRPC client, drives the full lifecycle, asserts state + version
+at every step, and asserts that `incident.opened` lands on NATS within the
+deadline — exercising the publish-after-commit path.
 
 ## Dev
 

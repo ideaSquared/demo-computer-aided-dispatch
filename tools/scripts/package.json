@@ -8,6 +8,9 @@
   },
   "dependencies": {
     "@cad/observability": "workspace:*",
+    "@cad/proto": "workspace:*",
+    "@grpc/grpc-js": "^1.13.6",
+    "nats": "^2.29.1",
     "node-plop": "^0.32.3"
   },
   "devDependencies": {

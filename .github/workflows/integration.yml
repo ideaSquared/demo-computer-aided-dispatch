@@ -59,6 +59,8 @@ jobs:
           echo '::endgroup::'
       - name: Smoke
         run: pnpm smoke
+      - name: gRPC smoke (incident)
+        run: pnpm smoke:grpc
       - name: Dump container logs on failure
         if: failure()
         run: |
@@ -123,6 +125,11 @@ jobs:
       # Two clients, B receives A's setStatus event via the spine.
       - name: WebSocket smoke
         run: pnpm smoke:ws
+      # Phase 2 end-to-end: gRPC client → incident-service → Postgres tx,
+      # then incident.opened → NATS subscriber. Asserts the full lifecycle
+      # + that the NATS publish-after-commit path actually fires.
+      - name: gRPC smoke (incident)
+        run: pnpm smoke:grpc
       - name: Dump container logs on failure
         if: failure()
         run: |

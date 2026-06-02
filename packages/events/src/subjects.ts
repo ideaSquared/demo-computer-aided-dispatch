@@ -4,9 +4,12 @@
  * becomes a TS error rather than a silently-dead subscription.
  */
 export const subjects = {
-  IncidentCreated: 'incident.created',
+  IncidentOpened: 'incident.opened',
+  IncidentTriaged: 'incident.triaged',
   IncidentDispatched: 'incident.dispatched',
+  IncidentUnitArrived: 'incident.unitArrived',
   IncidentResolved: 'incident.resolved',
+  IncidentCancelled: 'incident.cancelled',
   AuditActionTaken: 'audit.actionTaken',
   PresenceChanged: 'presence.changed',
 } as const;
