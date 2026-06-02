@@ -8,11 +8,18 @@ for the canonical product and architecture spec.
 
 ## Setup
 
+Need Node 22 LTS and pnpm 11. Quickest path:
+
 ```bash
-nvm use                 # Node 22
-corepack enable         # pnpm
+npm install -g pnpm@11.5.1   # or `corepack enable` (see note below)
 pnpm install
 ```
+
+> **Windows:** `corepack enable` often fails with `EPERM ... pnpx` because it
+> writes shims into `C:\Program Files\nodejs`. Use the `npm install -g pnpm`
+> line above instead — pnpm honors the version pinned in `package.json`. Full
+> per-OS setup, including the Volta/WSL options, is in
+> [`docs/development.md`](docs/development.md).
 
 ## Run
 
@@ -32,11 +39,19 @@ pnpm test
 pnpm smoke              # gRPC health-check sweep across services
 ```
 
+## Guides
+
+- **[docs/development.md](docs/development.md)** — full dev setup for Windows,
+  macOS, and Linux; the inner loop, generators, and troubleshooting.
+- **[docs/deployment.md](docs/deployment.md)** — running the whole stack on a
+  Linux host with Docker (the production-like target).
+
 ## Deploy
 
-Not yet. This is an exploration project; nothing is deployed. Phase 6 introduces
-Kubernetes overlays under `infra/k8s/`. Until then, `docker compose up` is the
-production target.
+Not yet hardened. This is an exploration project; nothing is deployed publicly.
+Phase 6 introduces Kubernetes overlays under `infra/k8s/`. Until then,
+`docker compose -f infra/docker-compose.yml up -d --build` on a Linux host is
+the production target — see [docs/deployment.md](docs/deployment.md).
 
 ## Layout
 
