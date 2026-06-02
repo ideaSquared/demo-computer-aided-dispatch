@@ -18,6 +18,12 @@ export async function migrate(opts: { databaseUrl: string; schema: string }): Pr
   // it the runner crashes on a fresh DB ("schema does not exist") because
   // it tries to put pgmigrations in our schema before our own init.ts
   // migration has had a chance to create it.
+  //
+  // `ignorePattern` is wrapped as `^${pattern}$` by the runner; we need to
+  // skip both dotfiles (the runner's default) AND tsup's `.js.map` sidecars
+  // which sit next to each compiled migration. Without the .map exclusion
+  // node-pg-migrate import()s the sourcemap as a module and dies with
+  // ERR_UNKNOWN_FILE_EXTENSION.
   const result = await runner({
     databaseUrl: opts.databaseUrl,
     schema: opts.schema,
@@ -25,6 +31,7 @@ export async function migrate(opts: { databaseUrl: string; schema: string }): Pr
     createSchema: true,
     migrationsTable: 'pgmigrations',
     dir: resolve(HERE, 'migrations'),
+    ignorePattern: '(\\..*|.*\\.map)',
     direction: 'up',
     count: Number.POSITIVE_INFINITY,
     log: () => {},
