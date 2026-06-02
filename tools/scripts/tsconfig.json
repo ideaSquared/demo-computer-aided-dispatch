@@ -5,6 +5,7 @@
   },
   "include": [
     "plop/**/*.ts",
+    "seed.ts",
     "smoke.ts",
     "ws-smoke.ts",
     "grpc-smoke.ts",

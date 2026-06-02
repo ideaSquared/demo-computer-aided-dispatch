@@ -21,6 +21,7 @@
     "new-lib": "tsx tools/scripts/plop/run.ts lib",
     "new-service": "tsx tools/scripts/plop/run.ts service",
     "proto:gen": "pnpm --filter @cad/proto run gen",
+    "seed": "tsx tools/scripts/seed.ts",
     "smoke": "tsx tools/scripts/smoke.ts",
     "smoke:ws": "tsx tools/scripts/ws-smoke.ts",
     "smoke:grpc": "tsx tools/scripts/grpc-smoke.ts",
