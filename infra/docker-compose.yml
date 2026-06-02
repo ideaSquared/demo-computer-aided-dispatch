@@ -1,0 +1,26 @@
+# Full local stack. Includes the dep stack via `extends`/`include` so a single
+# `docker compose -f infra/docker-compose.yml up` runs everything. Service
+# entries are appended here by `pnpm new-service` (the generator prints the
+# fragment to paste in).
+name: cad
+
+include:
+  - path: docker-compose.deps.yml
+
+# Service entries land here as services come online in PR 3.
+# Example placeholder kept for the smoke test to demonstrate intent:
+#
+# services:
+#   service-gateway:
+#     build:
+#       context: ..
+#       dockerfile: services/service.gateway/Dockerfile
+#     environment:
+#       NODE_ENV: development
+#       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+#     ports:
+#       - "5000:5000"
+#     depends_on:
+#       - postgres
+#       - nats
+#       - redis

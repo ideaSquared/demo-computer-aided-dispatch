@@ -1,0 +1,26 @@
+// Health probe contract reused by every CAD service.
+//
+// We mirror the grpc.health.v1.HealthCheck surface so standard probes work,
+// but expose it under cad.common.v1 to keep all generated clients under a
+// single root package.
+
+syntax = "proto3";
+
+package cad.common.v1;
+
+service HealthService {
+  rpc Check(HealthCheckRequest) returns (HealthCheckResponse);
+}
+
+message HealthCheckRequest {
+  string service = 1;
+}
+
+message HealthCheckResponse {
+  enum ServingStatus {
+    SERVING_STATUS_UNSPECIFIED = 0;
+    SERVING_STATUS_SERVING = 1;
+    SERVING_STATUS_NOT_SERVING = 2;
+  }
+  ServingStatus status = 1;
+}

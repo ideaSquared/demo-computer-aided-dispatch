@@ -1,0 +1,37 @@
+# @cad/{{name}}
+
+React + Vite + vanilla-extract app scaffolded by `pnpm new-app`.
+
+## Setup
+
+```bash
+pnpm install
+```
+
+## Dev
+
+```bash
+pnpm --filter @cad/{{name}} dev          # http://localhost:3000
+```
+
+Vite proxies `/api`, `/ws`, and `/health` to the gateway. Set `DOCKER_ENV=true` in Compose so the proxy targets `service-gateway` instead of `localhost`.
+
+## Build
+
+```bash
+pnpm --filter @cad/{{name}} build
+```
+
+## Test
+
+```bash
+pnpm --filter @cad/{{name}} test
+```
+
+## Conventions
+
+- Styling: `@cad/lib.ui` exports `vars.*`. Never hardcode hex or magic px.
+- API calls: through `src/services/libraryServices.ts` — never raw `fetch`.
+- Use `??` (not `||`) when defaulting `VITE_API_BASE_URL`.
+
+See `.claude/skills/new-app` for the full playbook.

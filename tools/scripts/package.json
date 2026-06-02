@@ -1,0 +1,18 @@
+{
+  "name": "@cad/scripts",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@cad/observability": "workspace:*",
+    "node-plop": "^0.32.0"
+  },
+  "devDependencies": {
+    "@cad/tsconfig": "workspace:*",
+    "@types/node": "^20.17.10",
+    "typescript": "^5.7.2"
+  }
+}

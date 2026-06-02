@@ -1,0 +1,30 @@
+{
+  "name": "@cad/proto",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./src/index.ts"
+    }
+  },
+  "files": ["dist", "src", "cad"],
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "gen": "echo 'TODO: wire buf generate once services land in PR 3 — see .claude/skills/grpc-contract'",
+    "lint:proto": "echo 'TODO: buf lint && buf breaking — wire in PR 3'",
+    "clean": "rm -rf dist gen .turbo"
+  },
+  "devDependencies": {
+    "@cad/tsconfig": "workspace:*",
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.2",
+    "vitest": "^3.2.6"
+  }
+}

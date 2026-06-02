@@ -1,0 +1,9 @@
+{
+  "extends": "@cad/tsconfig/node.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src"
+  },
+  "include": ["src/**/*"],
+  "exclude": ["dist", "node_modules", "gen"]
+}
