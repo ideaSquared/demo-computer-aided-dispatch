@@ -17,15 +17,15 @@ RUN pnpm install --frozen-lockfile
 
 FROM deps AS build
 WORKDIR /app
-RUN pnpm --filter @cad/{{name}} build
+RUN pnpm --filter @cad/service.auth build
 
 FROM node:20-alpine AS runtime
 RUN apk add --no-cache tini
 WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=build /app/node_modules ./node_modules
-COPY --from=build /app/services/{{name}}/dist ./dist
-COPY --from=build /app/services/{{name}}/package.json ./package.json
+COPY --from=build /app/services/service.auth/dist ./dist
+COPY --from=build /app/services/service.auth/package.json ./package.json
 USER node
 ENTRYPOINT ["/sbin/tini", "--"]
 CMD ["node", "dist/index.js"]

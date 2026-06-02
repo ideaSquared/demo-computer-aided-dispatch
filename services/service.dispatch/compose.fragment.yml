@@ -1,0 +1,22 @@
+# Paste this entry under `services:` in infra/docker-compose.yml.
+
+service-dispatch:
+  build:
+    context: ..
+    dockerfile: services/service.dispatch/Dockerfile
+  ports:
+    - "5030:5030"
+  environment:
+    NODE_ENV: development
+    PORT: "5030"
+    OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+    NATS_URL: nats://nats:4222
+    REDIS_URL: redis://redis:6379
+  depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+  restart: unless-stopped

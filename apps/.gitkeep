@@ -1,0 +1,1 @@
+# Reserved for React + Vite + vanilla-extract operator consoles, generated via `pnpm new-app`. Tracked via `.gitkeep` so Dockerfiles that `COPY apps` succeed before any app exists.

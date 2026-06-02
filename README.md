@@ -65,17 +65,17 @@ See `.claude/skills/new-*` for the full step-by-step.
 Per-service PRDs live in Notion as sub-pages of the CAD System page. The
 repo-side stubs at `docs/prd/<service>.md` link to them.
 
-| Service        | PRD |
-| -------------- | --- |
-| gateway        | [docs/prd/gateway.md](docs/prd/gateway.md) |
-| auth           | [docs/prd/auth.md](docs/prd/auth.md) |
-| incident       | [docs/prd/incident.md](docs/prd/incident.md) |
-| dispatch       | [docs/prd/dispatch.md](docs/prd/dispatch.md) |
-| resource       | [docs/prd/resource.md](docs/prd/resource.md) |
-| geo            | [docs/prd/geo.md](docs/prd/geo.md) |
-| triage         | [docs/prd/triage.md](docs/prd/triage.md) |
-| notification   | [docs/prd/notification.md](docs/prd/notification.md) |
-| audit          | [docs/prd/audit.md](docs/prd/audit.md) |
+| Service        | One-liner                                                  | Port | Code                                                     | PRD |
+| -------------- | ---------------------------------------------------------- | ---- | -------------------------------------------------------- | --- |
+| gateway        | BFF + WebSocket terminator + RBAC enforcement at the edge. | 5000 | [services/service.gateway](services/service.gateway)         | [docs/prd/gateway.md](docs/prd/gateway.md) |
+| auth           | Login, JWT issuing, CASL ability synthesis.                | 5010 | [services/service.auth](services/service.auth)               | [docs/prd/auth.md](docs/prd/auth.md) |
+| incident       | Incident aggregate (event-sourced state machine).          | 5020 | [services/service.incident](services/service.incident)       | [docs/prd/incident.md](docs/prd/incident.md) |
+| dispatch       | Stateless unit-allocation recommender.                     | 5030 | [services/service.dispatch](services/service.dispatch)       | [docs/prd/dispatch.md](docs/prd/dispatch.md) |
+| resource       | Unit roster, status, last-known location.                  | 5040 | [services/service.resource](services/service.resource)       | [docs/prd/resource.md](docs/prd/resource.md) |
+| geo            | Geocoding, nearest-K, route ETA over PostGIS.              | 5050 | [services/service.geo](services/service.geo)                 | [docs/prd/geo.md](docs/prd/geo.md) |
+| notification   | NATS → Redis fan-out spine for WebSockets.                 | 5060 | [services/service.notification](services/service.notification) | [docs/prd/notification.md](docs/prd/notification.md) |
+| audit          | Append-only audit log consumer.                            | 5070 | [services/service.audit](services/service.audit)             | [docs/prd/audit.md](docs/prd/audit.md) |
+| triage         | AI severity classification via local Ollama (Python).      | 5080 | [services/triage](services/triage)                       | [docs/prd/triage.md](docs/prd/triage.md) |
 
 ## Conventions
 
