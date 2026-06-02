@@ -3,6 +3,13 @@
   "compilerOptions": {
     "noEmit": true
   },
-  "include": ["plop/**/*.ts", "smoke.ts", "ws-smoke.ts", "grpc-smoke.ts", "incident-ws-smoke.ts"],
+  "include": [
+    "plop/**/*.ts",
+    "smoke.ts",
+    "ws-smoke.ts",
+    "grpc-smoke.ts",
+    "incident-ws-smoke.ts",
+    "incident-http-smoke.ts"
+  ],
   "exclude": ["plop/templates/**"]
 }

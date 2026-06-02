@@ -12,6 +12,7 @@ service-gateway:
     OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
     NATS_URL: nats://nats:4222
     REDIS_URL: redis://redis:6379
+    INCIDENT_GRPC_URL: service-incident:5021
   depends_on:
       postgres:
         condition: service_healthy

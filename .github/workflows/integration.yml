@@ -14,6 +14,7 @@ on:
       - "tools/scripts/ws-smoke.ts"
       - "tools/scripts/grpc-smoke.ts"
       - "tools/scripts/incident-ws-smoke.ts"
+      - "tools/scripts/incident-http-smoke.ts"
       - ".dockerignore"
 
 concurrency:
@@ -71,6 +72,9 @@ jobs:
       # Incident event spine: NATS → notification → Redis → gateway → ws.
       - name: Incident WS smoke
         run: pnpm smoke:incident-ws
+      # Phase 2 command path: http → gateway → incident gRPC → Postgres.
+      - name: Incident HTTP smoke (gateway)
+        run: pnpm smoke:incident-http
       - name: Dump container logs on failure
         if: failure()
         run: |
@@ -147,6 +151,9 @@ jobs:
       # Incident event spine: NATS → notification → Redis → gateway → ws.
       - name: Incident WS smoke
         run: pnpm smoke:incident-ws
+      # Phase 2 command path: http → gateway → incident gRPC → Postgres.
+      - name: Incident HTTP smoke (gateway)
+        run: pnpm smoke:incident-http
       - name: Dump container logs on failure
         if: failure()
         run: |

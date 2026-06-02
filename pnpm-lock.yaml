@@ -443,6 +443,9 @@ importers:
       '@fastify/websocket':
         specifier: ^11.0.1
         version: 11.2.0
+      '@grpc/grpc-js':
+        specifier: ^1.13.6
+        version: 1.14.4
       fastify:
         specifier: ^5.8.5
         version: 5.8.5
