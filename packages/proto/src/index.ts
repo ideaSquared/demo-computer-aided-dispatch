@@ -19,7 +19,13 @@
 export * from '../gen/ts/cad/common/v1/geo.js';
 export type { CheckRequest, CheckResponse } from '../gen/ts/cad/common/v1/health.js';
 export * as HealthV1 from '../gen/ts/cad/common/v1/health.js';
-
+export type {
+  Recommendation,
+  RecommendedUnit,
+  RecommendUnitsRequest,
+  RecommendUnitsResponse,
+} from '../gen/ts/cad/dispatch/v1/dispatch.js';
+export * as DispatchV1 from '../gen/ts/cad/dispatch/v1/dispatch.js';
 export type {
   CancelRequest,
   CancelResponse,
@@ -40,7 +46,6 @@ export type {
   TriageResponse,
 } from '../gen/ts/cad/incident/v1/incident.js';
 export * as IncidentV1 from '../gen/ts/cad/incident/v1/incident.js';
-
 export type {
   GetUnitRequest,
   GetUnitResponse,

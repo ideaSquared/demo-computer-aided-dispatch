@@ -404,18 +404,15 @@ importers:
       '@cad/config':
         specifier: workspace:*
         version: link:../../packages/config
-      '@cad/db':
-        specifier: workspace:*
-        version: link:../../packages/db
-      '@cad/events':
-        specifier: workspace:*
-        version: link:../../packages/events
       '@cad/observability':
         specifier: workspace:*
         version: link:../../packages/observability
       '@cad/proto':
         specifier: workspace:*
         version: link:../../packages/proto
+      '@grpc/grpc-js':
+        specifier: ^1.13.6
+        version: 1.14.4
       fastify:
         specifier: ^5.8.5
         version: 5.8.5

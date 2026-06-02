@@ -12,7 +12,8 @@
     "incident-ws-smoke.ts",
     "incident-http-smoke.ts",
     "resource-http-smoke.ts",
-    "dispatch-loop-smoke.ts"
+    "dispatch-loop-smoke.ts",
+    "recommend-smoke.ts"
   ],
   "exclude": ["plop/templates/**"]
 }

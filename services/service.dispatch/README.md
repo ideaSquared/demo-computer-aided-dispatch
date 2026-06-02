@@ -2,7 +2,7 @@
 
 > **One-liner:** Stateless unit-allocation recommender.
 
-Node + Fastify service scaffolded by `pnpm new-service` (PR 2) and stubbed in PR 3.
+Node + Fastify + gRPC service scaffolded by `pnpm new-service` (PR 2), stubbed in PR 3, and built out into the recommender in Phase 3.
 
 ## Notion PRD
 
@@ -12,9 +12,9 @@ The canonical product/architecture spec is the Notion page:
 
 Notion is the source of truth. This README is a navigation aid only.
 
-## Status (PR 3)
+## Status
 
-Stub. HTTP `/health` only. Boot-proven by `pnpm smoke`. Domain logic, gRPC handlers, DB migrations, and NATS subscribers land in subsequent PRs against the PRD.
+Stateless recommender. Exposes a gRPC `DispatchService.RecommendUnits(incidentId, limit)` on `GRPC_PORT` (5031) alongside the HTTP `/health` probe (5030). It owns no data: per request it makes exactly two synchronous reads — incident `Get` (location + tier) via `INCIDENT_GRPC_URL` and resource `ListUnits` (available units in that tier) via `RESOURCE_GRPC_URL` — then ranks the units by great-circle distance (haversine, pure `src/recommend.ts`) and returns the nearest `limit`. The gateway surfaces it at `GET /api/incidents/:id/recommended-units`.
 
 ## Dev
 
@@ -45,6 +45,6 @@ The generator emitted `compose.fragment.yml`; it's been pasted into `infra/docke
 
 - `src/index.ts` calls `initTracing()` BEFORE any other import. Don't reorder.
 - Config via `@cad/config` + Zod. No `process.env` reads outside `src/config.ts`.
-- This service owns Postgres schema `(none — pure compute/passthrough)`. No cross-schema joins; talk to other services via gRPC or events.
+- This service owns no Postgres schema — it's pure compute. No DB, no migrations, no NATS/Redis. It reads other services via gRPC only (never cross-schema joins) and keeps that to exactly the two reads RecommendUnits needs.
 
 See `.claude/skills/new-service`, `.claude/skills/otel-trace`, `.claude/skills/nats-event`.

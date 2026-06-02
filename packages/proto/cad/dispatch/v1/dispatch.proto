@@ -1,0 +1,71 @@
+// service.dispatch — the stateless unit-allocation recommender. It owns no
+// data: RecommendUnits reads the incident (location + tier) and the resource
+// fleet (available units in that tier) over gRPC, ranks the units by
+// great-circle distance to the incident, and returns the nearest few.
+//
+// The `ServiceTier` and `UnitStatus` enums are defined LOCALLY rather than
+// imported from cad.resource.v1 so this contract is self-contained — a caller
+// of DispatchService needn't link the resource proto. The recommender
+// translates between the resource enums and these on the way out.
+//
+// Each RPC has its own Request/Response wrapper so individual methods can grow
+// fields without forcing a v2 (buf STANDARD enforces this). See
+// .claude/skills/grpc-contract.
+
+syntax = "proto3";
+
+package cad.dispatch.v1;
+
+import "cad/common/v1/geo.proto";
+
+service DispatchService {
+  rpc RecommendUnits(RecommendUnitsRequest) returns (RecommendUnitsResponse);
+}
+
+// ---- requests --------------------------------------------------------------
+
+message RecommendUnitsRequest {
+  string incident_id = 1;
+  int32 limit = 2;  // max recommendations to return; <= 0 means "service default".
+}
+
+// ---- responses -------------------------------------------------------------
+
+message RecommendUnitsResponse {
+  repeated Recommendation recommendations = 1;
+}
+
+// ---- domain shape ----------------------------------------------------------
+
+message Recommendation {
+  RecommendedUnit unit = 1;
+  // Great-circle distance from the incident to the unit's last-known location,
+  // in metres. 0 when either location is unknown (see the service docs).
+  double distance_meters = 2;
+}
+
+message RecommendedUnit {
+  string id = 1;
+  string callsign = 2;
+  ServiceTier tier = 3;
+  UnitStatus status = 4;
+  cad.common.v1.GeoPoint location = 5;  // null when no position is known.
+}
+
+// ---- enums -----------------------------------------------------------------
+
+enum ServiceTier {
+  SERVICE_TIER_UNSPECIFIED = 0;
+  SERVICE_TIER_POLICE = 1;
+  SERVICE_TIER_MEDICAL = 2;
+  SERVICE_TIER_FIRE = 3;
+}
+
+enum UnitStatus {
+  UNIT_STATUS_UNSPECIFIED = 0;
+  UNIT_STATUS_AVAILABLE = 1;
+  UNIT_STATUS_DISPATCHED = 2;
+  UNIT_STATUS_EN_ROUTE = 3;
+  UNIT_STATUS_ON_SCENE = 4;
+  UNIT_STATUS_OUT_OF_SERVICE = 5;
+}
