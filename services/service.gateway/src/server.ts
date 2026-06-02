@@ -2,7 +2,9 @@ import { connect } from '@cad/events';
 import { createRedisSubscriber } from '@cad/redis';
 import websocket from '@fastify/websocket';
 import Fastify from 'fastify';
+import { createIncidentClient } from './clients/incident.js';
 import { config } from './config.js';
+import { registerIncidentRoutes } from './http/incidents.js';
 import { makeConnectionHandler } from './ws/connection.js';
 import { createForwarder } from './ws/forwarder.js';
 import { TopicRegistry } from './ws/registry.js';
@@ -20,6 +22,12 @@ const nats = await connect(config.NATS_URL);
 const redisSub = createRedisSubscriber(config.REDIS_URL);
 await redisSub.connect();
 app.log.info({ nats: config.NATS_URL, redis: config.REDIS_URL }, 'connected to deps');
+
+// The gRPC client is lazy/channel-based — no await; the channel connects on
+// first RPC. Registering the HTTP command path that proxies to it.
+const incidentClient = createIncidentClient(config.INCIDENT_GRPC_URL);
+registerIncidentRoutes(app, incidentClient);
+app.log.info({ incidentGrpc: config.INCIDENT_GRPC_URL }, 'incident HTTP command path ready');
 
 await app.register(websocket);
 
@@ -50,6 +58,7 @@ async function shutdown(signal: string): Promise<void> {
   app.log.info({ signal }, 'shutting down');
   try {
     await app.close();
+    incidentClient.close();
     await nats.drain();
     await redisSub.quit();
   } finally {

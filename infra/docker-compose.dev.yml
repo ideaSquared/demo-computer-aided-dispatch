@@ -45,6 +45,7 @@ services:
     environment:
       <<: *dev-env
       PORT: "5000"
+      INCIDENT_GRPC_URL: service-incident:5021
     develop:
       watch:
         - { action: sync, path: ../services/service.gateway/src, target: /app/services/service.gateway/src }
