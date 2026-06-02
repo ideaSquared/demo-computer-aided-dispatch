@@ -79,3 +79,51 @@ jobs:
       - name: Tear down
         if: always()
         run: docker compose -f infra/docker-compose.yml down -v
+
+  dev-stack:
+    name: dev-stack
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      # Build + boot the Docker DEV stack (services run via tsx watch in
+      # containers). We use `up -d` rather than `watch` because watch is
+      # interactive/long-running; `up` still validates the dev image builds
+      # and every service boots and serves under tsx.
+      - name: Build dev images
+        run: docker compose -f infra/docker-compose.dev.yml build
+      - name: Boot the dev stack
+        run: docker compose -f infra/docker-compose.dev.yml up -d
+      - name: Wait for deps
+        run: |
+          for i in {1..60}; do
+            if docker compose -f infra/docker-compose.dev.yml ps --status running | grep -q jaeger && \
+               docker compose -f infra/docker-compose.dev.yml ps --status running | grep -q postgres; then
+              echo "Dev stack up."
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Dev stack failed to come up." >&2
+          docker compose -f infra/docker-compose.dev.yml logs
+          exit 1
+      - name: Smoke
+        run: pnpm smoke
+      - name: Dump container logs on failure
+        if: failure()
+        run: |
+          for svc in service-gateway service-auth service-incident service-dispatch service-resource service-geo service-notification service-audit service-triage postgres redis nats jaeger; do
+            echo "::group::logs $svc"
+            docker compose -f infra/docker-compose.dev.yml logs --no-color --tail=100 "$svc" || true
+            echo '::endgroup::'
+          done
+      - name: Tear down
+        if: always()
+        run: docker compose -f infra/docker-compose.dev.yml down -v
