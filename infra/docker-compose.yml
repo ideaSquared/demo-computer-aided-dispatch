@@ -1,26 +1,199 @@
-# Full local stack. Includes the dep stack via `extends`/`include` so a single
-# `docker compose -f infra/docker-compose.yml up` runs everything. Service
-# entries are appended here by `pnpm new-service` (the generator prints the
-# fragment to paste in).
+# Full local stack. The dep services (Postgres, Redis, NATS, Jaeger) come
+# in via the include below. Service entries are pasted from each
+# `services/<name>/compose.fragment.yml` (the new-service generator emits
+# the fragment when the service is created).
 name: cad
 
 include:
   - path: docker-compose.deps.yml
 
-# Service entries land here as services come online in PR 3.
-# Example placeholder kept for the smoke test to demonstrate intent:
-#
-# services:
-#   service-gateway:
-#     build:
-#       context: ..
-#       dockerfile: services/service.gateway/Dockerfile
-#     environment:
-#       NODE_ENV: development
-#       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
-#     ports:
-#       - "5000:5000"
-#     depends_on:
-#       - postgres
-#       - nats
-#       - redis
+services:
+  service-gateway:
+    build:
+      context: ..
+      dockerfile: services/service.gateway/Dockerfile
+    ports:
+      - "5000:5000"
+    environment:
+      NODE_ENV: development
+      PORT: "5000"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+      NATS_URL: nats://nats:4222
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  service-auth:
+    build:
+      context: ..
+      dockerfile: services/service.auth/Dockerfile
+    ports:
+      - "5010:5010"
+    environment:
+      NODE_ENV: development
+      PORT: "5010"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+      DATABASE_URL: postgres://cad:cad@postgres:5432/cad
+      DB_SCHEMA: auth
+      NATS_URL: nats://nats:4222
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  service-incident:
+    build:
+      context: ..
+      dockerfile: services/service.incident/Dockerfile
+    ports:
+      - "5020:5020"
+    environment:
+      NODE_ENV: development
+      PORT: "5020"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+      DATABASE_URL: postgres://cad:cad@postgres:5432/cad
+      DB_SCHEMA: incident
+      NATS_URL: nats://nats:4222
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  service-dispatch:
+    build:
+      context: ..
+      dockerfile: services/service.dispatch/Dockerfile
+    ports:
+      - "5030:5030"
+    environment:
+      NODE_ENV: development
+      PORT: "5030"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+      NATS_URL: nats://nats:4222
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  service-resource:
+    build:
+      context: ..
+      dockerfile: services/service.resource/Dockerfile
+    ports:
+      - "5040:5040"
+    environment:
+      NODE_ENV: development
+      PORT: "5040"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+      DATABASE_URL: postgres://cad:cad@postgres:5432/cad
+      DB_SCHEMA: resource
+      NATS_URL: nats://nats:4222
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  service-geo:
+    build:
+      context: ..
+      dockerfile: services/service.geo/Dockerfile
+    ports:
+      - "5050:5050"
+    environment:
+      NODE_ENV: development
+      PORT: "5050"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+      DATABASE_URL: postgres://cad:cad@postgres:5432/cad
+      DB_SCHEMA: geo
+      NATS_URL: nats://nats:4222
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  service-notification:
+    build:
+      context: ..
+      dockerfile: services/service.notification/Dockerfile
+    ports:
+      - "5065:5065"
+    environment:
+      NODE_ENV: development
+      PORT: "5065"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+      NATS_URL: nats://nats:4222
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  service-audit:
+    build:
+      context: ..
+      dockerfile: services/service.audit/Dockerfile
+    ports:
+      - "5070:5070"
+    environment:
+      NODE_ENV: development
+      PORT: "5070"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+      DATABASE_URL: postgres://cad:cad@postgres:5432/cad
+      DB_SCHEMA: audit
+      NATS_URL: nats://nats:4222
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  service-triage:
+    build:
+      context: ..
+      dockerfile: services/triage/Dockerfile
+    ports:
+      - "5080:5080"
+    environment:
+      PORT: "5080"
+      OLLAMA_URL: http://ollama:11434
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+    restart: unless-stopped

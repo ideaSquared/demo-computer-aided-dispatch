@@ -66,6 +66,15 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Normalise image name
+        id: img
+        # GHCR rejects uppercase repo names. Both the repo path and the
+        # matrix target (which contains the service folder) need lowering.
+        run: |
+          repo=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')
+          target=$(echo '${{ matrix.target }}' | tr '[:upper:]' '[:lower:]')
+          echo "repo=$repo" >> "$GITHUB_OUTPUT"
+          echo "target=$target" >> "$GITHUB_OUTPUT"
       - name: Build (and push on main)
         uses: docker/build-push-action@v6
         with:
@@ -73,7 +82,7 @@ jobs:
           file: ${{ matrix.target }}/Dockerfile
           push: ${{ github.event_name == 'push' }}
           tags: |
-            ghcr.io/${{ github.repository }}/${{ matrix.target }}:${{ github.sha }}
-            ghcr.io/${{ github.repository }}/${{ matrix.target }}:latest
-          cache-from: type=gha,scope=${{ matrix.target }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.target }}
+            ghcr.io/${{ steps.img.outputs.repo }}/${{ steps.img.outputs.target }}:${{ github.sha }}
+            ghcr.io/${{ steps.img.outputs.repo }}/${{ steps.img.outputs.target }}:latest
+          cache-from: type=gha,scope=${{ steps.img.outputs.target }}
+          cache-to: type=gha,mode=max,scope=${{ steps.img.outputs.target }}

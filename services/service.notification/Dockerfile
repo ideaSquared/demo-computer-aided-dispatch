@@ -21,7 +21,7 @@ WORKDIR /app
 # The trailing '...' is pnpm's "include dependencies" filter. Required because
 # tsup resolves @cad/* via the 'import' export condition (./dist/index.js),
 # which doesn't exist until the shared package is built.
-RUN pnpm --filter "@cad/{{name}}..." build
+RUN pnpm --filter "@cad/service.notification..." build
 
 FROM node:20-alpine AS runtime
 RUN apk add --no-cache tini
@@ -34,9 +34,9 @@ ENV NODE_ENV=production
 # tsup because it patches modules via dynamic require() at runtime.
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/packages ./packages
-COPY --from=build /app/services/{{name}}/node_modules ./services/{{name}}/node_modules
-COPY --from=build /app/services/{{name}}/dist ./services/{{name}}/dist
-COPY --from=build /app/services/{{name}}/package.json ./services/{{name}}/package.json
+COPY --from=build /app/services/service.notification/node_modules ./services/service.notification/node_modules
+COPY --from=build /app/services/service.notification/dist ./services/service.notification/dist
+COPY --from=build /app/services/service.notification/package.json ./services/service.notification/package.json
 USER node
 ENTRYPOINT ["/sbin/tini", "--"]
-CMD ["node", "services/{{name}}/dist/index.js"]
+CMD ["node", "services/service.notification/dist/index.js"]
