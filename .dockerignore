@@ -1,0 +1,47 @@
+# Docker build context excludes. The compose files build with `context: ..`
+# (the repo root), so without this every service build would try to stream the
+# entire repo — including every workspace `node_modules/`, which is full of
+# pnpm symlinks (e.g. packages/config/node_modules/@cad/tsconfig -> ../../..).
+# BuildKit rejects those symlinks ("invalid file request"), and on Windows it
+# fails hard. The Dockerfiles reinstall dependencies inside the image
+# (`pnpm install --frozen-lockfile` in the deps stage), so node_modules must
+# never be in the context anyway.
+
+# Dependencies — reinstalled inside the image
+**/node_modules
+.pnpm-store
+
+# Build output — regenerated inside the image
+**/dist
+**/.turbo
+**/*.tsbuildinfo
+packages/proto/gen
+
+# VCS / CI / editor
+.git
+.github
+.husky
+.vscode
+.idea
+
+# Tests / coverage
+**/coverage
+**/junit.xml
+
+# Python (triage) local artefacts
+**/__pycache__
+**/.venv
+**/.pytest_cache
+**/.ruff_cache
+**/.mypy_cache
+
+# Local env + logs (never bake these into an image)
+.env
+.env.*
+!.env.example
+**/*.log
+
+# Docs and meta — not needed at build time
+docs
+*.md
+!README.md
