@@ -9,7 +9,7 @@ for the canonical product and architecture spec.
 ## Setup
 
 ```bash
-nvm use                 # Node 20
+nvm use                 # Node 22
 corepack enable         # pnpm
 pnpm install
 ```

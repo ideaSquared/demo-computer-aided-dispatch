@@ -6,7 +6,7 @@ export default defineConfig({
   dts: false,
   sourcemap: true,
   clean: true,
-  target: 'node20',
+  target: 'node22',
   splitting: false,
   shims: true,
   // Everything is external; the runtime image carries node_modules + packages
