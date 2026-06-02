@@ -18,6 +18,7 @@
     "@cad/events": "workspace:*",
     "@cad/observability": "workspace:*",
     "@cad/proto": "workspace:*",
+    "@cad/redis": "workspace:*",
     "fastify": "^5.8.5",
     "zod": "^4.4.3"
   },

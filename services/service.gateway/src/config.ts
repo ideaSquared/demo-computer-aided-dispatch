@@ -10,7 +10,7 @@ export const config = loadEnv(
     PORT: z.coerce.number().default(5000),
     DATABASE_URL: z.string().url().optional(),
     NATS_URL: z.string().url().default('nats://localhost:4222'),
-    REDIS_URL: z.string().url().optional(),
+    REDIS_URL: z.string().url(), // required: gateway subscribes to Redis pub/sub channels
     OTEL_EXPORTER_OTLP_ENDPOINT: z.string().url().optional(),
   }),
 );

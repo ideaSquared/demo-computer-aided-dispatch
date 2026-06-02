@@ -7,8 +7,10 @@ on:
       - "packages/events/**"
       - "packages/proto/**"
       - "packages/db/**"
+      - "packages/redis/**"
       - "infra/docker-compose*.yml"
       - "tools/scripts/smoke.ts"
+      - "tools/scripts/ws-smoke.ts"
       - ".dockerignore"
 
 concurrency:
@@ -116,6 +118,10 @@ jobs:
           exit 1
       - name: Smoke
         run: pnpm smoke
+      # Phase 1 end-to-end: WS → NATS → notification → Redis → WS.
+      # Two clients, B receives A's setStatus event via the spine.
+      - name: WebSocket smoke
+        run: pnpm smoke:ws
       - name: Dump container logs on failure
         if: failure()
         run: |

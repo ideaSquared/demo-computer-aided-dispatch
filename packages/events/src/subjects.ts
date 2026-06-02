@@ -8,6 +8,7 @@ export const subjects = {
   IncidentDispatched: 'incident.dispatched',
   IncidentResolved: 'incident.resolved',
   AuditActionTaken: 'audit.actionTaken',
+  PresenceChanged: 'presence.changed',
 } as const;
 
 export type SubjectName = keyof typeof subjects;
