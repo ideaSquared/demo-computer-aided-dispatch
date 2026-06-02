@@ -1,0 +1,33 @@
+name: Feature request
+description: Propose a new capability or non-trivial change.
+labels: ["feature"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What's the user or operator problem? Why does it matter now?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: One or two paragraphs. Link to the Notion PRD if one exists.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: input
+    id: prd
+    attributes:
+      label: Notion PRD URL
+      placeholder: https://www.notion.so/...
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope check
+      options:
+        - label: This change requires a new ADR
+        - label: This change requires a Notion PRD update
+        - label: This change requires a new shared package or service

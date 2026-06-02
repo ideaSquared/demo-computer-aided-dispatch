@@ -1,0 +1,67 @@
+name: integration
+
+on:
+  pull_request:
+    paths:
+      - "services/**"
+      - "packages/events/**"
+      - "packages/proto/**"
+      - "packages/db/**"
+      - "infra/docker-compose*.yml"
+      - "tools/scripts/smoke.ts"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: 20
+  PNPM_VERSION: 9
+
+jobs:
+  smoke:
+    name: smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Build images
+        run: docker compose -f infra/docker-compose.yml build
+      - name: Boot the stack
+        run: docker compose -f infra/docker-compose.yml up -d
+      - name: Wait for deps
+        run: |
+          for i in {1..60}; do
+            if docker compose -f infra/docker-compose.yml ps --status running | grep -q jaeger && \
+               docker compose -f infra/docker-compose.yml ps --status running | grep -q postgres; then
+              echo "Stack up."
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Stack failed to come up." >&2
+          docker compose -f infra/docker-compose.yml logs
+          exit 1
+      - name: Smoke
+        run: pnpm smoke
+      - name: Capture logs on failure
+        if: failure()
+        run: docker compose -f infra/docker-compose.yml logs --no-color > compose-logs.txt
+      - name: Upload logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: compose-logs
+          path: compose-logs.txt
+      - name: Tear down
+        if: always()
+        run: docker compose -f infra/docker-compose.yml down -v

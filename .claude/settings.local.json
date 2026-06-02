@@ -1,0 +1,32 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pnpm install:*)",
+      "Bash(pnpm dev:*)",
+      "Bash(pnpm build:*)",
+      "Bash(pnpm test:*)",
+      "Bash(pnpm typecheck:*)",
+      "Bash(pnpm lint:*)",
+      "Bash(pnpm new-app:*)",
+      "Bash(pnpm new-lib:*)",
+      "Bash(pnpm new-service:*)",
+      "Bash(pnpm proto:gen)",
+      "Bash(pnpm smoke)",
+      "Bash(pnpm exec:*)",
+      "Bash(turbo run:*)",
+      "Bash(docker compose:*)",
+      "Bash(docker ps)",
+      "Bash(docker logs:*)",
+      "Bash(vitest:*)",
+      "Bash(biome:*)",
+      "Bash(git status)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git branch:*)",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(grep:*)",
+      "Bash(rg:*)"
+    ]
+  }
+}

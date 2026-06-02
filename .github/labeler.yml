@@ -1,0 +1,50 @@
+apps:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "apps/**"
+
+services:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "services/**"
+
+packages:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "packages/**"
+
+infra:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "infra/**"
+          - "**/Dockerfile*"
+          - "**/compose*.yml"
+
+docs:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "docs/**"
+          - "**/*.md"
+          - "**/README.md"
+
+claude-config:
+  - changed-files:
+      - any-glob-to-any-file:
+          - ".claude/**"
+          - "CLAUDE.md"
+
+ci:
+  - changed-files:
+      - any-glob-to-any-file:
+          - ".github/**"
+
+generators:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "tools/scripts/plop/**"
+          - ".claude/skills/new-*/**"
+
+triage:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "services/triage/**"

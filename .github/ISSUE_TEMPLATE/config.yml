@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Notion — CAD System
+    url: https://www.notion.so/a5551665a3234a9390a99bd968c021d2
+    about: Canonical product spec, service decomposition, phase plan.
+  - name: Notion — Engineering Handbook
+    url: https://www.notion.so/f3b1c2ee884542ca82d8930561caa25e
+    about: Stack, conventions, on-call, incident response.

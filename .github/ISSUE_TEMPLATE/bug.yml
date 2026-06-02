@@ -1,0 +1,33 @@
+name: Bug report
+description: Something is broken in the CAD system or the dev environment.
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What did you observe? What did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Numbered steps. Smallest reproducer that still fails.
+    validations:
+      required: true
+  - type: input
+    id: service
+    attributes:
+      label: Affected service / app / package
+      placeholder: e.g. services/incident, apps/console, packages/ui
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs, traces, screenshots
+      description: Paste relevant log lines, Jaeger trace IDs, or screenshots.
+  - type: input
+    id: commit
+    attributes:
+      label: Commit SHA
+      description: Output of `git rev-parse HEAD` at the time of the bug.
