@@ -79,8 +79,9 @@ export async function listOpen(
   opts: { tier?: ServiceTier; limit: number },
 ): Promise<ViewRow[]> {
   // Open == anything not in a terminal state. Cancelled/resolved are
-  // explicitly out; everything else (open/triaged/dispatched/onScene) is in.
-  const openStatuses = ['open', 'triaged', 'dispatched', 'onScene'];
+  // explicitly out; everything else (open/triaged/dispatched/enRoute/onScene)
+  // is in.
+  const openStatuses = ['open', 'triaged', 'dispatched', 'enRoute', 'onScene'];
   const rows = opts.tier
     ? await db<ViewRow[]>`
         SELECT id, status, tier, state, version, updated_at

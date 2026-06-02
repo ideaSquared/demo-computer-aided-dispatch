@@ -7,6 +7,7 @@ export const subjects = {
   IncidentOpened: 'incident.opened',
   IncidentTriaged: 'incident.triaged',
   IncidentDispatched: 'incident.dispatched',
+  IncidentEnRoute: 'incident.enRoute',
   IncidentUnitArrived: 'incident.unitArrived',
   IncidentResolved: 'incident.resolved',
   IncidentCancelled: 'incident.cancelled',

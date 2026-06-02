@@ -22,6 +22,7 @@ describe('topicsFor', () => {
     subjects.IncidentOpened,
     subjects.IncidentTriaged,
     subjects.IncidentDispatched,
+    subjects.IncidentEnRoute,
     subjects.IncidentUnitArrived,
     subjects.IncidentResolved,
     subjects.IncidentCancelled,

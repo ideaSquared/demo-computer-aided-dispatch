@@ -44,6 +44,12 @@ export interface IncidentDispatched extends DomainEventBase {
   dispatchedBy: string;
 }
 
+export interface IncidentMarkedEnRoute extends DomainEventBase {
+  type: 'IncidentMarkedEnRoute';
+  /** The assigned unit whose enRoute report drove the transition. */
+  unitId: string;
+}
+
 export interface IncidentUnitArrived extends DomainEventBase {
   type: 'IncidentUnitArrived';
   unitId: string;
@@ -64,6 +70,7 @@ export type IncidentEvent =
   | IncidentOpened
   | IncidentTriaged
   | IncidentDispatched
+  | IncidentMarkedEnRoute
   | IncidentUnitArrived
   | IncidentResolved
   | IncidentCancelled;

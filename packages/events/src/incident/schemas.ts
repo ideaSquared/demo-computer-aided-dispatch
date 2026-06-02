@@ -30,6 +30,12 @@ export const IncidentDispatchedSchema = EnvelopeSchema.extend({
 });
 export type IncidentDispatched = z.infer<typeof IncidentDispatchedSchema>;
 
+export const IncidentMarkedEnRouteSchema = EnvelopeSchema.extend({
+  ...baseIncident,
+  unitId: z.string().min(1),
+});
+export type IncidentMarkedEnRoute = z.infer<typeof IncidentMarkedEnRouteSchema>;
+
 export const IncidentUnitArrivedSchema = EnvelopeSchema.extend({
   ...baseIncident,
   unitId: z.string().min(1),

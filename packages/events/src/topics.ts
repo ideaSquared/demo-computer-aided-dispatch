@@ -29,6 +29,7 @@ export function topicsFor(subject: string, payload: unknown): string[] {
     case subjects.IncidentOpened:
     case subjects.IncidentTriaged:
     case subjects.IncidentDispatched:
+    case subjects.IncidentEnRoute:
     case subjects.IncidentUnitArrived:
     case subjects.IncidentResolved:
     case subjects.IncidentCancelled: {
