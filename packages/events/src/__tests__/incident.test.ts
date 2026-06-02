@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   IncidentCancelledSchema,
   IncidentDispatchedSchema,
+  IncidentMarkedEnRouteSchema,
   IncidentOpenedSchema,
   IncidentResolvedSchema,
   IncidentTriagedSchema,
@@ -80,6 +81,16 @@ describe('the rest of the incident.* schemas', () => {
         dispatchedBy: 'op-2',
       }),
     ).toThrow();
+  });
+
+  it('accepts an en-route event', () => {
+    expect(() =>
+      IncidentMarkedEnRouteSchema.parse({ ...envelope, ...aggregate, unitId: 'unit-a' }),
+    ).not.toThrow();
+  });
+
+  it('rejects an en-route event with a missing unitId', () => {
+    expect(() => IncidentMarkedEnRouteSchema.parse({ ...envelope, ...aggregate })).toThrow();
   });
 
   it('accepts unit-arrived / resolved / cancelled', () => {

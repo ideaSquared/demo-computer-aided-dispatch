@@ -6,6 +6,7 @@ import { publish, subjects } from '@cad/events';
 import {
   IncidentCancelledSchema,
   IncidentDispatchedSchema,
+  IncidentMarkedEnRouteSchema,
   IncidentOpenedSchema,
   IncidentResolvedSchema,
   IncidentTriagedSchema,
@@ -126,6 +127,12 @@ export function createHandlers(deps: Deps): IncidentV1.IncidentServiceServer {
             ...envelope,
             unitIds: event.unitIds,
             dispatchedBy: event.dispatchedBy,
+          });
+          break;
+        case 'IncidentMarkedEnRoute':
+          await publish(deps, subjects.IncidentEnRoute, IncidentMarkedEnRouteSchema, {
+            ...envelope,
+            unitId: event.unitId,
           });
           break;
         case 'IncidentUnitArrived':

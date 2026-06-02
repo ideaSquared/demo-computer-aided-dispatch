@@ -2,18 +2,21 @@ import { InvariantError } from './errors.js';
 import type { GeoPoint, IncidentEvent, ServiceTier, Severity } from './events.js';
 
 /**
- * Lifecycle states. The `enRoute` proto state is intentionally absent here:
- * no command in this service produces it yet (it will be driven by unit
- * status updates from `service.resource` in a later phase). The aggregate
- * only models transitions it actually owns.
+ * Lifecycle states. `enRoute` is driven by unit status updates from
+ * `service.resource`: when an assigned unit reports enRoute, the incident
+ * subscriber issues `markEnRoute`. The aggregate models the transitions it
+ * owns; the unit's own status history lives in `service.resource`.
  *
- *   open → triaged → dispatched → onScene → resolved
+ *   open → triaged → dispatched → enRoute → onScene → resolved
+ *                              ↘ onScene (a unit can arrive without first
+ *                                 reporting enRoute)
  *                              ↘ cancelled  (from any non-terminal state)
  */
 export type IncidentStatus =
   | 'open'
   | 'triaged'
   | 'dispatched'
+  | 'enRoute'
   | 'onScene'
   | 'resolved'
   | 'cancelled';
@@ -73,6 +76,8 @@ export function apply(state: IncidentState | null, event: IncidentEvent): Incide
         unitIds: event.unitIds,
         updatedAt: event.occurredAt,
       };
+    case 'IncidentMarkedEnRoute':
+      return { ...state, status: 'enRoute', updatedAt: event.occurredAt };
     case 'IncidentUnitArrived':
       return {
         ...state,

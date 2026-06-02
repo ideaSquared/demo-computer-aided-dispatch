@@ -13,6 +13,7 @@ const STATUS_TO_PROTO: Record<IncidentStatus, IncidentV1.IncidentState> = {
   open: IncidentV1.IncidentState.OPEN,
   triaged: IncidentV1.IncidentState.TRIAGED,
   dispatched: IncidentV1.IncidentState.DISPATCHED,
+  enRoute: IncidentV1.IncidentState.EN_ROUTE,
   onScene: IncidentV1.IncidentState.ON_SCENE,
   resolved: IncidentV1.IncidentState.RESOLVED,
   cancelled: IncidentV1.IncidentState.CANCELLED,

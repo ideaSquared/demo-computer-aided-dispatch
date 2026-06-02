@@ -6,6 +6,7 @@ import {
   fold,
   type IncidentEvent,
   InvariantError,
+  markEnRoute,
   open,
   recordUnitArrival,
   resolve,
@@ -17,6 +18,7 @@ const T1 = '2026-06-02T10:01:00.000Z';
 const T2 = '2026-06-02T10:02:00.000Z';
 const T3 = '2026-06-02T10:03:00.000Z';
 const T4 = '2026-06-02T10:04:00.000Z';
+const T5 = '2026-06-02T10:05:00.000Z';
 
 const openInput = {
   title: 'structure fire on main st',
@@ -50,15 +52,16 @@ describe('apply / fold', () => {
     });
   });
 
-  it('folds a full open→triaged→dispatched→onScene→resolved lifecycle', () => {
+  it('folds a full open→triaged→dispatched→enRoute→onScene→resolved lifecycle', () => {
     let log: IncidentEvent[] = [];
     log = execute(log, (s) => open(s, openInput));
     log = execute(log, (s) => triage(s, { severity: 'high', triagedBy: 'op-1', occurredAt: T1 }));
     log = execute(log, (s) =>
       dispatch(s, { unitIds: ['unit-a', 'unit-b'], dispatchedBy: 'op-2', occurredAt: T2 }),
     );
-    log = execute(log, (s) => recordUnitArrival(s, { unitId: 'unit-a', occurredAt: T3 }));
-    log = execute(log, (s) => resolve(s, { resolvedBy: 'op-2', occurredAt: T4 }));
+    log = execute(log, (s) => markEnRoute(s, { unitId: 'unit-a', occurredAt: T3 }));
+    log = execute(log, (s) => recordUnitArrival(s, { unitId: 'unit-a', occurredAt: T4 }));
+    log = execute(log, (s) => resolve(s, { resolvedBy: 'op-2', occurredAt: T5 }));
 
     const state = fold(log);
     expect(state).toMatchObject({
@@ -67,7 +70,7 @@ describe('apply / fold', () => {
       unitIds: ['unit-a', 'unit-b'],
       unitsOnScene: ['unit-a'],
       openedAt: T0,
-      updatedAt: T4,
+      updatedAt: T5,
     });
   });
 
@@ -152,6 +155,89 @@ describe('commands — happy paths', () => {
       dispatch(triaged, { unitIds: ['unit-a'], dispatchedBy: 'op-2', occurredAt: T2 }),
     ).toEqual([
       { type: 'IncidentDispatched', occurredAt: T2, unitIds: ['unit-a'], dispatchedBy: 'op-2' },
+    ]);
+  });
+});
+
+describe('markEnRoute / onScene transitions', () => {
+  const dispatched = fold([
+    ...open(null, openInput),
+    { type: 'IncidentTriaged', occurredAt: T1, severity: 'high', triagedBy: 'op-1' },
+    {
+      type: 'IncidentDispatched',
+      occurredAt: T2,
+      unitIds: ['unit-a', 'unit-b'],
+      dispatchedBy: 'op-2',
+    },
+  ]);
+  const enRoute = fold([
+    ...open(null, openInput),
+    { type: 'IncidentTriaged', occurredAt: T1, severity: 'high', triagedBy: 'op-1' },
+    {
+      type: 'IncidentDispatched',
+      occurredAt: T2,
+      unitIds: ['unit-a', 'unit-b'],
+      dispatchedBy: 'op-2',
+    },
+    { type: 'IncidentMarkedEnRoute', occurredAt: T3, unitId: 'unit-a' },
+  ]);
+
+  it('markEnRoute emits IncidentMarkedEnRoute from dispatched', () => {
+    expect(markEnRoute(dispatched, { unitId: 'unit-a', occurredAt: T3 })).toEqual([
+      { type: 'IncidentMarkedEnRoute', occurredAt: T3, unitId: 'unit-a' },
+    ]);
+  });
+
+  it('applying IncidentMarkedEnRoute moves the incident to enRoute', () => {
+    expect(enRoute?.status).toBe('enRoute');
+    expect(enRoute?.updatedAt).toBe(T3);
+  });
+
+  it('cannot markEnRoute before dispatch (triaged)', () => {
+    const triaged = fold([
+      ...open(null, openInput),
+      { type: 'IncidentTriaged', occurredAt: T1, severity: 'high', triagedBy: 'op-1' },
+    ]);
+    expect(() => markEnRoute(triaged, { unitId: 'unit-a', occurredAt: T3 })).toThrow(
+      /cannot mark en route from status 'triaged'/,
+    );
+  });
+
+  it('cannot markEnRoute once already enRoute (no regress / redelivery)', () => {
+    expect(() => markEnRoute(enRoute, { unitId: 'unit-a', occurredAt: T4 })).toThrow(
+      /cannot mark en route from status 'enRoute'/,
+    );
+  });
+
+  it('cannot markEnRoute for a unit that was not dispatched', () => {
+    expect(() => markEnRoute(dispatched, { unitId: 'unit-z', occurredAt: T3 })).toThrow(
+      /was not dispatched/,
+    );
+  });
+
+  it('records arrival (onScene) from enRoute', () => {
+    expect(recordUnitArrival(enRoute, { unitId: 'unit-a', occurredAt: T4 })).toEqual([
+      { type: 'IncidentUnitArrived', occurredAt: T4, unitId: 'unit-a' },
+    ]);
+    const onScene = fold([
+      ...open(null, openInput),
+      { type: 'IncidentTriaged', occurredAt: T1, severity: 'high', triagedBy: 'op-1' },
+      {
+        type: 'IncidentDispatched',
+        occurredAt: T2,
+        unitIds: ['unit-a', 'unit-b'],
+        dispatchedBy: 'op-2',
+      },
+      { type: 'IncidentMarkedEnRoute', occurredAt: T3, unitId: 'unit-a' },
+      { type: 'IncidentUnitArrived', occurredAt: T4, unitId: 'unit-a' },
+    ]);
+    expect(onScene?.status).toBe('onScene');
+    expect(onScene?.unitsOnScene).toEqual(['unit-a']);
+  });
+
+  it('still records arrival (onScene) directly from dispatched', () => {
+    expect(recordUnitArrival(dispatched, { unitId: 'unit-a', occurredAt: T3 })).toEqual([
+      { type: 'IncidentUnitArrived', occurredAt: T3, unitId: 'unit-a' },
     ]);
   });
 });

@@ -30,6 +30,7 @@
     "smoke:resource-http": "tsx tools/scripts/resource-http-smoke.ts",
     "smoke:dispatch-loop": "tsx tools/scripts/dispatch-loop-smoke.ts",
     "smoke:recommend": "tsx tools/scripts/recommend-smoke.ts",
+    "smoke:lifecycle": "tsx tools/scripts/lifecycle-smoke.ts",
     "dev:deps": "docker compose -f infra/docker-compose.deps.yml up -d",
     "dev:deps:down": "docker compose -f infra/docker-compose.deps.yml down",
     "dev:docker": "docker compose -f infra/docker-compose.dev.yml watch",

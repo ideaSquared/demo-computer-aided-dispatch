@@ -5,6 +5,7 @@ import { config } from './config.js';
 import { migrate } from './db/migrate.js';
 import { createHandlers } from './grpc/handlers.js';
 import { startGrpcServer } from './grpc/server.js';
+import { subscribeUnits } from './subscribers/unit.js';
 
 const app = Fastify({
   logger: {
@@ -32,7 +33,16 @@ app.log.info({ database: config.DATABASE_URL, nats: config.NATS_URL }, 'connecte
 const handlers = createHandlers({ db, nats });
 const grpcServer = await startGrpcServer({ port: config.GRPC_PORT, handlers, log: app.log });
 
-// 4. Fastify carries an HTTP /health probe so docker-compose / smoke tests
+// 4. The unit-movement→incident-lifecycle loop: react to unit.statusChanged by
+//    advancing the incident an assigned unit is working (enRoute → enRoute,
+//    onScene → onScene). Long-running NATS subscription; keep its promise
+//    reachable for shutdown and attach a .catch so a crash is logged.
+const unitLoop = subscribeUnits({ db, nats, log: app.log });
+void unitLoop.catch((err) => {
+  app.log.error({ err }, 'unit→incident subscriber crashed');
+});
+
+// 5. Fastify carries an HTTP /health probe so docker-compose / smoke tests
 //    can verify the process is up. The gRPC server has its own
 //    HealthService for grpcurl-style probes; the two are independent on
 //    purpose.

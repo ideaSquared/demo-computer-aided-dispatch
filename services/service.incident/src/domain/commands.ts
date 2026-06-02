@@ -94,6 +94,31 @@ export function dispatch(state: IncidentState | null, input: DispatchInput): Inc
   ];
 }
 
+export interface MarkEnRouteInput {
+  unitId: string;
+  occurredAt: string;
+}
+
+/**
+ * Driven by `service.resource`: an assigned unit reported enRoute, so advance
+ * the incident from `dispatched` to `enRoute`. Only legal from `dispatched` —
+ * once a unit is on scene the incident has moved past enRoute, and a
+ * redelivered enRoute report must not regress it (the subscriber relies on
+ * this throwing so it can swallow the redelivery as an idempotent skip).
+ */
+export function markEnRoute(state: IncidentState | null, input: MarkEnRouteInput): IncidentEvent[] {
+  const current = requireStatus(state, ['dispatched'], 'mark en route');
+  if (input.unitId.trim() === '') {
+    throw new InvariantError('cannot mark en route: unitId is required');
+  }
+  if (!current.unitIds.includes(input.unitId)) {
+    throw new InvariantError(
+      `cannot mark en route: unit '${input.unitId}' was not dispatched to this incident`,
+    );
+  }
+  return [{ type: 'IncidentMarkedEnRoute', occurredAt: input.occurredAt, unitId: input.unitId }];
+}
+
 export interface RecordUnitArrivalInput {
   unitId: string;
   occurredAt: string;
@@ -103,7 +128,7 @@ export function recordUnitArrival(
   state: IncidentState | null,
   input: RecordUnitArrivalInput,
 ): IncidentEvent[] {
-  const current = requireStatus(state, ['dispatched', 'onScene'], 'record arrival');
+  const current = requireStatus(state, ['dispatched', 'enRoute', 'onScene'], 'record arrival');
   if (input.unitId.trim() === '') {
     throw new InvariantError('cannot record arrival: unitId is required');
   }
