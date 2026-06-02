@@ -220,6 +220,7 @@ It's the only Python in the repo; everything else is TypeScript.
 | `pnpm smoke` → `NOT_SERVING` for everything | Deps/services not up, or probing too early | Ensure `pnpm dev:deps` + services are running; smoke retries for 60s per service. |
 | Docker build can't find files / slow on Windows | Repo on the Windows FS but built from WSL | Clone the repo inside the WSL 2 filesystem where you build it. |
 | Vite/Vitest can't resolve a `@cad/*` package | Missing install after adding a workspace dep | Re-run `pnpm install`. |
+| `ERR_MODULE_NOT_FOUND: ...@cad/observability/dist/index.js` | A shared lib hasn't been built; its `dist/` is missing | `pnpm dev` builds the libs first automatically. If you run a single service directly (`pnpm --filter @cad/service.x dev`), run `pnpm build` once first, or just use `pnpm dev`. |
 
 ---
 
