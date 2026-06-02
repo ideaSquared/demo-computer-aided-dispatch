@@ -1,6 +1,7 @@
 // CRITICAL: initTracing() must run BEFORE any other import. See
 // .claude/skills/otel-trace.
 import { initTracing } from '@cad/observability';
+
 initTracing('service.geo');
 
 // Everything else AFTER initTracing.

@@ -1,5 +1,5 @@
-import postgres from 'postgres';
 import type { Sql, TransactionSql } from 'postgres';
+import postgres from 'postgres';
 
 export type DbClient = Sql<Record<string, never>>;
 export type DbTransaction = TransactionSql<Record<string, never>>;

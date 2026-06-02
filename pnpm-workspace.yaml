@@ -3,3 +3,23 @@ packages:
   - "services/*"
   - "packages/*"
   - "tools/*"
+
+# pnpm 11 ships a 24h minimum-release-age supply-chain gate. For an
+# exploration project where we ride latest, set it to 0 and rely on the
+# committed lockfile for reproducibility.
+minimumReleaseAge: 0
+
+# Force vite 7 across the tree. Vitest 4 transitively pulls vite, which
+# resolves to vite 8 by default — but its new vite:oxc TS transformer
+# fails to walk the workspace layout to find tsconfig.json files. Vite 7
+# (esbuild-based) handles our layout fine and matches every other peer.
+overrides:
+  vite: "^7.3.5"
+
+# pnpm 11 requires explicit per-package opt-in for postinstall scripts.
+# These need real builds (esbuild downloads its native binary, protobufjs
+# prebuilds wire-format speedups, biome unpacks a native binary).
+allowBuilds:
+  "@biomejs/biome": true
+  esbuild: true
+  protobufjs: true

@@ -8,11 +8,11 @@
   },
   "dependencies": {
     "@cad/observability": "workspace:*",
-    "node-plop": "^0.32.0"
+    "node-plop": "^0.32.3"
   },
   "devDependencies": {
     "@cad/tsconfig": "workspace:*",
-    "@types/node": "^20.17.10",
-    "typescript": "^5.7.2"
+    "@types/node": "^22.10.6",
+    "typescript": "^6.0.3"
   }
 }

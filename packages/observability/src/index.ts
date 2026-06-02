@@ -1,7 +1,7 @@
-import { context, trace } from '@opentelemetry/api';
 import type { Span } from '@opentelemetry/api';
+import { context, trace } from '@opentelemetry/api';
 
-export { SpanStatusCode, trace, context } from '@opentelemetry/api';
+export { context, SpanStatusCode, trace } from '@opentelemetry/api';
 
 interface TracingHandle {
   shutdown(): Promise<void>;

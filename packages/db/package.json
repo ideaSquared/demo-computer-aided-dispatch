@@ -12,7 +12,10 @@
       "default": "./src/index.ts"
     }
   },
-  "files": ["dist", "src"],
+  "files": [
+    "dist",
+    "src"
+  ],
   "scripts": {
     "build": "tsup",
     "typecheck": "tsc --noEmit",
@@ -20,13 +23,13 @@
     "clean": "rm -rf dist .turbo"
   },
   "dependencies": {
-    "node-pg-migrate": "^7.9.0",
-    "postgres": "^3.4.5"
+    "node-pg-migrate": "^8.0.4",
+    "postgres": "^3.4.9"
   },
   "devDependencies": {
     "@cad/tsconfig": "workspace:*",
-    "tsup": "^8.3.5",
-    "typescript": "^5.7.2",
-    "vitest": "^4.1.0"
+    "tsup": "^8.5.1",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.8"
   }
 }
