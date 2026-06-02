@@ -27,9 +27,13 @@ FROM node:20-alpine AS runtime
 RUN apk add --no-cache tini
 WORKDIR /app
 ENV NODE_ENV=production
+# Preserve the workspace layout so Node's module-resolution algorithm finds
+# the service's node_modules (which contain pnpm symlinks into the root
+# /app/node_modules/.pnpm store).
 COPY --from=build /app/node_modules ./node_modules
-COPY --from=build /app/services/service.dispatch/dist ./dist
-COPY --from=build /app/services/service.dispatch/package.json ./package.json
+COPY --from=build /app/services/service.dispatch/node_modules ./services/service.dispatch/node_modules
+COPY --from=build /app/services/service.dispatch/dist ./services/service.dispatch/dist
+COPY --from=build /app/services/service.dispatch/package.json ./services/service.dispatch/package.json
 USER node
 ENTRYPOINT ["/sbin/tini", "--"]
-CMD ["node", "dist/index.js"]
+CMD ["node", "services/service.dispatch/dist/index.js"]
