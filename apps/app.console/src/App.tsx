@@ -2,11 +2,13 @@ import { Stack } from '@cad/lib.ui';
 import { useMemo, useState } from 'react';
 import * as styles from './App.css.js';
 import { IncidentBoard } from './incidents/IncidentBoard.js';
+import { useIncidents } from './incidents/useIncidents.js';
+import { IncidentMap } from './map/IncidentMap.js';
 import { type Identity, readIdentity, wsUrlFor } from './presence/identity.js';
 import { PresenceView } from './presence/PresencePage.js';
 import { useWs } from './ws/useWs.js';
 
-type Tab = 'incidents' | 'presence';
+type Tab = 'incidents' | 'map' | 'presence';
 
 export function App() {
   const identity = useMemo(
@@ -36,6 +38,11 @@ function ConsoleShell({ identity }: { identity: Identity }) {
   const { status, subscribe, send } = useWs({ url });
   const [tab, setTab] = useState<Tab>('incidents');
 
+  // One incident data source for the whole shell: the board and the map share
+  // this instance (and the single WS connection above), so they reconcile in
+  // lockstep — no second socket, no duplicate fetch/reconcile logic.
+  const incidents = useIncidents({ subscribe });
+
   return (
     <main className={styles.shell}>
       <Stack gap="24">
@@ -63,6 +70,15 @@ function ConsoleShell({ identity }: { identity: Identity }) {
           <button
             type="button"
             role="tab"
+            aria-selected={tab === 'map'}
+            className={styles.tab({ active: tab === 'map' })}
+            onClick={() => setTab('map')}
+          >
+            map
+          </button>
+          <button
+            type="button"
+            role="tab"
             aria-selected={tab === 'presence'}
             className={styles.tab({ active: tab === 'presence' })}
             onClick={() => setTab('presence')}
@@ -72,7 +88,9 @@ function ConsoleShell({ identity }: { identity: Identity }) {
         </div>
 
         {tab === 'incidents' ? (
-          <IncidentBoard identity={identity} subscribe={subscribe} />
+          <IncidentBoard identity={identity} incidents={incidents} />
+        ) : tab === 'map' ? (
+          <IncidentMap identity={identity} incidents={incidents} />
         ) : (
           <PresenceView status={status} subscribe={subscribe} send={send} />
         )}
