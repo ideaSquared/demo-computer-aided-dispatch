@@ -4,19 +4,19 @@ version = "0.0.0"
 description = "AI severity classification via a local LLM. The single Python service in the CAD repo."
 requires-python = ">=3.12"
 dependencies = [
-  "fastapi>=0.115.6",
-  "uvicorn[standard]>=0.34.0",
-  "pydantic>=2.10.4",
+  "fastapi>=0.136.3",
+  "uvicorn[standard]>=0.48.0",
+  "pydantic>=2.13.4",
   "httpx>=0.28.1",
-  "opentelemetry-distro[otlp]>=0.50b0",
+  "opentelemetry-distro[otlp]>=0.63b1",
 ]
 
 [project.optional-dependencies]
 dev = [
-  "pytest>=8.3.4",
-  "pytest-asyncio>=0.25.0",
-  "ruff>=0.8.4",
-  "mypy>=1.14.0",
+  "pytest>=9.0.3",
+  "pytest-asyncio>=1.4.0",
+  "ruff>=0.15.15",
+  "mypy>=2.1.0",
 ]
 
 [build-system]

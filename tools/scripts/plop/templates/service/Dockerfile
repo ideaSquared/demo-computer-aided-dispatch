@@ -4,7 +4,7 @@
 # workspace because pnpm needs every workspace package.json to resolve
 # 'workspace:*' references from the lockfile. The "build" stage runs a
 # filtered build so only this service compiles.
-FROM node:20-alpine AS deps
+FROM node:22-alpine AS deps
 RUN apk add --no-cache libc6-compat
 RUN corepack enable
 WORKDIR /app
@@ -23,7 +23,7 @@ WORKDIR /app
 # which doesn't exist until the shared package is built.
 RUN pnpm --filter "@cad/{{name}}..." build
 
-FROM node:20-alpine AS runtime
+FROM node:22-alpine AS runtime
 RUN apk add --no-cache tini
 WORKDIR /app
 ENV NODE_ENV=production

@@ -1,7 +1,7 @@
-import { forwardRef } from 'react';
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
-import { button } from './Button.css.js';
+import { forwardRef } from 'react';
 import type { ButtonVariants } from './Button.css.js';
+import { button } from './Button.css.js';
 
 export type ButtonProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'children'> &
   ButtonVariants & {

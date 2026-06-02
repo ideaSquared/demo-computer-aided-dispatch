@@ -31,7 +31,7 @@ pnpm new-service <service-name>
 **Service name** must start with `service.` (e.g. `service.incident`,
 `service.dispatch`). Kebab-case inside the segment.
 
-The generator scaffolds a Node 20 + Fastify + gRPC service. **Python is not
+The generator scaffolds a Node 22 + Fastify + gRPC service. **Python is not
 supported** — the triage service is the documented exception and is
 hand-rolled.
 

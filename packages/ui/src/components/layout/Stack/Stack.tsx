@@ -1,7 +1,7 @@
-import { forwardRef } from 'react';
 import type { HTMLAttributes, ReactNode } from 'react';
-import { stack } from './Stack.css.js';
+import { forwardRef } from 'react';
 import type { StackVariants } from './Stack.css.js';
+import { stack } from './Stack.css.js';
 
 export type StackProps = HTMLAttributes<HTMLDivElement> &
   StackVariants & {

@@ -3,10 +3,10 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "packageManager": "pnpm@9.15.9",
+  "packageManager": "pnpm@11.5.1",
   "engines": {
-    "node": ">=20.0.0",
-    "pnpm": ">=9.0.0"
+    "node": ">=22.0.0",
+    "pnpm": ">=11.0.0"
   },
   "scripts": {
     "build": "turbo run build",
@@ -27,19 +27,21 @@
     "prepare": "husky"
   },
   "devDependencies": {
-    "@biomejs/biome": "^1.9.4",
-    "@commitlint/cli": "^19.6.1",
-    "@commitlint/config-conventional": "^19.6.0",
-    "@commitlint/types": "^19.5.0",
-    "@types/node": "^20.17.10",
+    "@biomejs/biome": "^2.4.16",
+    "@commitlint/cli": "^21.0.2",
+    "@commitlint/config-conventional": "^21.0.2",
+    "@commitlint/types": "^21.0.1",
+    "@types/node": "^22.10.6",
     "husky": "^9.1.7",
-    "lint-staged": "^15.2.11",
-    "plop": "^4.0.1",
-    "tsx": "^4.19.2",
-    "turbo": "^2.3.3",
-    "typescript": "^5.7.2"
+    "lint-staged": "^17.0.7",
+    "plop": "^4.0.5",
+    "tsx": "^4.22.4",
+    "turbo": "^2.9.16",
+    "typescript": "^6.0.3"
   },
   "lint-staged": {
-    "*.{ts,tsx,js,jsx,json,md,yml,yaml,css.ts}": ["biome check --write --no-errors-on-unmatched"]
+    "*.{ts,tsx,js,jsx,json,md,yml,yaml,css.ts}": [
+      "biome check --write --no-errors-on-unmatched"
+    ]
   }
 }

@@ -52,7 +52,7 @@ re-introducing them.
 - **Frontend:** React 18 + Vite + **vanilla-extract** for styling. No
   styled-components, no Emotion, no CSS-in-JS runtime, no Tailwind. All
   visual values come from `vars.*` in `@cad/lib.ui`.
-- **Backend services:** Node 20 + Fastify. gRPC for sync inter-service
+- **Backend services:** Node 22 + Fastify. gRPC for sync inter-service
   calls (contracts in `packages/proto`). NATS JetStream for async events
   (schemas in `packages/events`).
 - **Data:** Postgres 16 + PostGIS (one logical schema per service in a

@@ -12,19 +12,23 @@
       "default": "./src/index.ts"
     }
   },
-  "files": ["dist", "src", "cad"],
+  "files": [
+    "dist",
+    "src",
+    "cad"
+  ],
   "scripts": {
     "build": "tsup",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "gen": "echo 'TODO: wire buf generate once services land in PR 3 — see .claude/skills/grpc-contract'",
-    "lint:proto": "echo 'TODO: buf lint && buf breaking — wire in PR 3'",
+    "gen": "echo 'TODO: wire buf generate once services land in PR 3 \u2014 see .claude/skills/grpc-contract'",
+    "lint:proto": "echo 'TODO: buf lint && buf breaking \u2014 wire in PR 3'",
     "clean": "rm -rf dist gen .turbo"
   },
   "devDependencies": {
     "@cad/tsconfig": "workspace:*",
-    "tsup": "^8.3.5",
-    "typescript": "^5.7.2",
-    "vitest": "^4.1.0"
+    "tsup": "^8.5.1",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.8"
   }
 }

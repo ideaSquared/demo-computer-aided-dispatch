@@ -8,10 +8,10 @@ disable-model-invocation: true
 
 ## Two Dockerfile shapes
 
-- **`infra/Dockerfile.service`** — Node 20 Alpine, multi-stage:
+- **`infra/Dockerfile.service`** — Node 22 Alpine, multi-stage:
   `deps → build → runtime`. Args: `SERVICE_NAME` selects which workspace to
   build.
-- **`infra/Dockerfile.app`** — Node 20 Alpine for build,
+- **`infra/Dockerfile.app`** — Node 22 Alpine for build,
   nginx-alpine for runtime. Args: `APP_NAME`.
 
 Service-specific deviations belong in `services/<name>/Dockerfile` and must
