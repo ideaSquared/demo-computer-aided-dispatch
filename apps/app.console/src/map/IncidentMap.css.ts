@@ -94,6 +94,73 @@ export const dispatchedRing = style({
   pointerEvents: 'none',
 });
 
+/**
+ * A unit marker. Deliberately square (vs. the round incident marker) so the
+ * two layers read as distinct at a glance. Colour encodes unit status, using
+ * the same token mapping as the fleet roster badges.
+ */
+export const unitMarker = recipe({
+  base: {
+    position: 'absolute',
+    transform: 'translate(-50%, -50%)',
+    width: '16px',
+    height: '16px',
+    padding: '0',
+    borderRadius: vars.radii.sm,
+    border: `2px solid ${vars.colors.surface.bg}`,
+    cursor: 'pointer',
+    boxShadow: vars.shadows.sm,
+    transition: vars.transitions.fast,
+    selectors: {
+      '&:hover': { boxShadow: vars.shadows.md },
+      '&:focus-visible': { outline: 'none', boxShadow: vars.shadows.focusRing },
+    },
+  },
+  variants: {
+    status: {
+      available: { background: vars.colors.intent.success },
+      dispatched: { background: vars.colors.brand.primary },
+      enRoute: { background: vars.colors.brand.primary },
+      onScene: { background: vars.colors.intent.warning },
+      outOfService: { background: vars.colors.text.subtle },
+    },
+    selected: {
+      true: { boxShadow: vars.shadows.elevated, borderColor: vars.colors.brand.primary },
+      false: {},
+    },
+  },
+  defaultVariants: { status: 'available', selected: false },
+});
+
+/** Status badge for the unit popover and the off-map units list. */
+export const unitStatusBadge = recipe({
+  base: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    padding: `${vars.spacing['2']} ${vars.spacing['8']}`,
+    borderRadius: vars.radii.full,
+    fontSize: '12px',
+    fontWeight: 600,
+    color: vars.colors.text.onBrand,
+  },
+  variants: {
+    status: {
+      available: { background: vars.colors.intent.success },
+      dispatched: { background: vars.colors.brand.primary },
+      enRoute: { background: vars.colors.brand.primary },
+      onScene: { background: vars.colors.intent.warning },
+      outOfService: { background: vars.colors.text.subtle },
+    },
+  },
+  defaultVariants: { status: 'available' },
+});
+
+export const unitIncidentRef = style({
+  font: vars.typography.mono,
+  fontSize: '12px',
+  color: vars.colors.text.default,
+});
+
 export const sidebar = style({
   display: 'flex',
   flexDirection: 'column',
@@ -222,4 +289,31 @@ export const legendSwatch = recipe({
     },
   },
   defaultVariants: { severity: 'none' },
+});
+
+/** Vertical rule separating the incident-severity keys from the unit-status keys. */
+export const legendDivider = style({
+  alignSelf: 'stretch',
+  width: '1px',
+  background: vars.colors.surface.border,
+});
+
+/** Square swatch (matching the unit marker) so the legend reads units, not incidents. */
+export const legendUnitSwatch = recipe({
+  base: {
+    display: 'inline-block',
+    width: '12px',
+    height: '12px',
+    borderRadius: vars.radii.sm,
+  },
+  variants: {
+    status: {
+      available: { background: vars.colors.intent.success },
+      dispatched: { background: vars.colors.brand.primary },
+      enRoute: { background: vars.colors.brand.primary },
+      onScene: { background: vars.colors.intent.warning },
+      outOfService: { background: vars.colors.text.subtle },
+    },
+  },
+  defaultVariants: { status: 'available' },
 });

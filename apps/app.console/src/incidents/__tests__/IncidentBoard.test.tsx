@@ -1,8 +1,10 @@
 import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { useFleet } from '../../fleet/useFleet.js';
 import type { Identity } from '../../presence/identity.js';
 import type { Incident, IncidentApi } from '../../services/incident.js';
+import type { Unit, UnitApi } from '../../services/units.js';
 import { IncidentBoard } from '../IncidentBoard.js';
 import { useIncidents } from '../useIncidents.js';
 
@@ -11,13 +13,14 @@ const identity: Identity = { operatorId: 'alex', displayName: 'Alex', tier: 'fir
 const noopSubscribe = () => () => undefined;
 
 /**
- * The shell owns the incident data source and passes it down, so mount the
- * board through the real `useIncidents` hook wired to a mock api — exercising
- * the same path production uses.
+ * The shell owns the incident + fleet data sources and passes them down, so
+ * mount the board through the real `useIncidents`/`useFleet` hooks wired to
+ * mock apis — exercising the same path production uses.
  */
-function Board({ api }: { api: IncidentApi }) {
+function Board({ api, unitApi }: { api: IncidentApi; unitApi?: UnitApi }) {
   const incidents = useIncidents({ subscribe: noopSubscribe, api });
-  return <IncidentBoard identity={identity} incidents={incidents} />;
+  const fleet = useFleet({ subscribe: noopSubscribe, api: unitApi ?? makeUnitApi() });
+  return <IncidentBoard identity={identity} incidents={incidents} fleet={fleet} />;
 }
 
 function makeIncident(over: Partial<Incident> = {}): Incident {
@@ -47,6 +50,30 @@ function makeApi(over: Partial<IncidentApi> = {}): IncidentApi {
     arrival: vi.fn(async () => makeIncident()),
     resolve: vi.fn(async () => makeIncident()),
     cancel: vi.fn(async () => makeIncident()),
+    ...over,
+  };
+}
+
+function makeUnit(over: Partial<Unit> = {}): Unit {
+  return {
+    id: 'u1',
+    callsign: 'Engine 7',
+    tier: 'fire',
+    status: 'available',
+    incidentId: null,
+    location: null,
+    updatedAt: '2026-06-02T10:00:00.000Z',
+    version: 0,
+    ...over,
+  };
+}
+
+function makeUnitApi(over: Partial<UnitApi> = {}): UnitApi {
+  return {
+    list: vi.fn(async () => [] as ReadonlyArray<Unit>),
+    get: vi.fn(async () => makeUnit()),
+    register: vi.fn(async () => makeUnit()),
+    setStatus: vi.fn(async () => makeUnit()),
     ...over,
   };
 }
@@ -98,5 +125,75 @@ describe('IncidentBoard', () => {
         openedBy: 'alex',
       }),
     );
+  });
+
+  it('the dispatch picker lists available units of the incident tier', async () => {
+    const api = makeApi({
+      list: vi.fn(async () => [makeIncident({ state: 'triaged', severity: 'high', version: 2 })]),
+    });
+    const unitApi = makeUnitApi({
+      list: vi.fn(async () => [
+        makeUnit({ id: 'u1', callsign: 'Engine 7', tier: 'fire', status: 'available' }),
+        makeUnit({ id: 'u2', callsign: 'Pump 2', tier: 'fire', status: 'dispatched' }),
+        makeUnit({ id: 'u3', callsign: 'Patrol 9', tier: 'police', status: 'available' }),
+      ]),
+    });
+    render(<Board api={api} unitApi={unitApi} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'dispatch' }));
+
+    // Available, on-tier unit is offered; the dispatched one and the off-tier
+    // one are not.
+    expect(await screen.findByText('Engine 7')).toBeInTheDocument();
+    expect(screen.queryByText('Pump 2')).not.toBeInTheDocument();
+    expect(screen.queryByText('Patrol 9')).not.toBeInTheDocument();
+
+    // Toggling "all tiers" reveals the available off-tier unit.
+    fireEvent.click(screen.getByLabelText(/all tiers/i));
+    expect(await screen.findByText('Patrol 9')).toBeInTheDocument();
+  });
+
+  it('dispatches the picked unit ids with the incident version', async () => {
+    const api = makeApi({
+      list: vi.fn(async () => [makeIncident({ state: 'triaged', severity: 'high', version: 2 })]),
+    });
+    const unitApi = makeUnitApi({
+      list: vi.fn(async () => [
+        makeUnit({ id: 'u1', callsign: 'Engine 7', tier: 'fire', status: 'available' }),
+        makeUnit({ id: 'u4', callsign: 'Engine 9', tier: 'fire', status: 'available' }),
+      ]),
+    });
+    render(<Board api={api} unitApi={unitApi} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'dispatch' }));
+
+    await screen.findByText('Engine 7');
+    fireEvent.click(screen.getByText('Engine 7'));
+    fireEvent.click(screen.getByText('Engine 9'));
+    fireEvent.click(screen.getByRole('button', { name: /dispatch \(2\)/i }));
+
+    await waitFor(() =>
+      expect(api.dispatch).toHaveBeenCalledWith('i1', {
+        unitIds: ['u1', 'u4'],
+        expectedVersion: 2,
+        dispatchedBy: 'alex',
+      }),
+    );
+  });
+
+  it('shows an empty state when no units are available', async () => {
+    const api = makeApi({
+      list: vi.fn(async () => [makeIncident({ state: 'triaged', severity: 'high', version: 2 })]),
+    });
+    const unitApi = makeUnitApi({
+      list: vi.fn(async () => [
+        makeUnit({ id: 'u1', callsign: 'Engine 7', tier: 'fire', status: 'dispatched' }),
+      ]),
+    });
+    render(<Board api={api} unitApi={unitApi} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'dispatch' }));
+
+    expect(await screen.findByText(/no available units/i)).toBeInTheDocument();
   });
 });

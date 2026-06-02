@@ -103,9 +103,9 @@ function ConsoleShell({ identity }: { identity: Identity }) {
         </div>
 
         {tab === 'incidents' ? (
-          <IncidentBoard identity={identity} incidents={incidents} />
+          <IncidentBoard identity={identity} incidents={incidents} fleet={fleet} />
         ) : tab === 'map' ? (
-          <IncidentMap identity={identity} incidents={incidents} />
+          <IncidentMap identity={identity} incidents={incidents} fleet={fleet} />
         ) : tab === 'fleet' ? (
           <FleetPanel identity={identity} fleet={fleet} />
         ) : (

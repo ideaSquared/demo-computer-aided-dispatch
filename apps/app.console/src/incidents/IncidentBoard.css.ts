@@ -52,6 +52,7 @@ export const meta = style({
 });
 
 export const actions = style({
+  position: 'relative',
   display: 'flex',
   gap: vars.spacing['8'],
   flexWrap: 'wrap',
@@ -155,4 +156,77 @@ export const severityBadge = recipe({
 
 export const severityNone = style({
   color: vars.colors.text.subtle,
+});
+
+/**
+ * Dispatch unit picker. A small popover anchored to the row's actions; layered
+ * above the board (`zIndex.modal`) so the option list isn't clipped by the
+ * grid. All chrome resolves from tokens so it tracks the active theme.
+ */
+export const picker = style({
+  position: 'absolute',
+  zIndex: vars.zIndex.modal,
+  display: 'flex',
+  flexDirection: 'column',
+  gap: vars.spacing['8'],
+  // Reset the <fieldset> UA defaults so it lays out like the rest of the chrome.
+  margin: '0',
+  minInlineSize: '0',
+  minWidth: '200px',
+  maxWidth: '260px',
+  padding: vars.spacing['12'],
+  border: `1px solid ${vars.colors.surface.border}`,
+  borderRadius: vars.radii.md,
+  background: vars.colors.surface.bgElevated,
+  boxShadow: vars.shadows.elevated,
+});
+
+export const pickerToggle = style({
+  display: 'flex',
+  alignItems: 'center',
+  gap: vars.spacing['8'],
+  font: vars.typography.mono,
+  fontSize: '12px',
+  color: vars.colors.text.subtle,
+  cursor: 'pointer',
+});
+
+export const pickerList = style({
+  display: 'flex',
+  flexDirection: 'column',
+  gap: vars.spacing['4'],
+  maxHeight: '200px',
+  overflowY: 'auto',
+});
+
+export const pickerOption = style({
+  display: 'flex',
+  alignItems: 'center',
+  gap: vars.spacing['8'],
+  padding: `${vars.spacing['4']} ${vars.spacing['8']}`,
+  borderRadius: vars.radii.sm,
+  color: vars.colors.text.default,
+  font: vars.typography.body,
+  cursor: 'pointer',
+  selectors: {
+    '&:hover': { background: vars.colors.surface.bg },
+  },
+});
+
+export const pickerCallsign = style({
+  fontWeight: 600,
+  flex: '1 1 auto',
+});
+
+export const pickerEmpty = style({
+  padding: `${vars.spacing['8']} ${vars.spacing['4']}`,
+  textAlign: 'center',
+  color: vars.colors.text.subtle,
+  font: vars.typography.body,
+});
+
+export const pickerActions = style({
+  display: 'flex',
+  gap: vars.spacing['8'],
+  justifyContent: 'flex-end',
 });
