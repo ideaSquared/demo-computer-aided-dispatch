@@ -18,6 +18,8 @@ export default defineConfig(({ mode }) => {
     mode === 'development'
       ? {
           '@cad/lib.ui': resolve(repoRoot, 'packages/ui/src'),
+          '@cad/events/presence': resolve(repoRoot, 'packages/events/src/presence/index.ts'),
+          '@cad/events': resolve(repoRoot, 'packages/events/src/index.ts'),
         }
       : {};
 
