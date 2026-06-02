@@ -20,7 +20,7 @@
   "scripts": {
     "build": "pnpm gen && tsup",
     "typecheck": "pnpm gen && tsc --noEmit",
-    "test": "vitest run",
+    "test": "pnpm gen && vitest run",
     "gen": "buf generate",
     "lint:proto": "buf lint",
     "clean": "rm -rf dist gen .turbo"
