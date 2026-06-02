@@ -15,8 +15,9 @@ FROM node:22-alpine
 RUN apk add --no-cache libc6-compat && corepack enable
 WORKDIR /app
 
-# Manifests first for layer caching, then the rest of the workspace.
-COPY pnpm-workspace.yaml pnpm-lock.yaml package.json tsconfig.base.json .npmrc ./
+# Manifests + root configs first for layer caching, then the workspace.
+# turbo.json is required — `pnpm build` runs `turbo run build`.
+COPY pnpm-workspace.yaml pnpm-lock.yaml package.json tsconfig.base.json turbo.json biome.json .npmrc ./
 COPY packages ./packages
 COPY services ./services
 COPY tools ./tools
