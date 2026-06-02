@@ -1,0 +1,41 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 10
+    versioning-strategy: increase
+    labels:
+      - dependencies
+    groups:
+      typescript-stack:
+        patterns:
+          - typescript
+          - "@types/*"
+          - tsx
+          - tsup
+      vitest:
+        patterns:
+          - vitest
+          - "@vitest/*"
+      vanilla-extract:
+        patterns:
+          - "@vanilla-extract/*"
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    labels:
+      - dependencies
+      - ci
+  - package-ecosystem: pip
+    directory: /services/triage
+    schedule:
+      interval: weekly
+      day: monday
+    labels:
+      - dependencies
+      - triage

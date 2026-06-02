@@ -1,0 +1,33 @@
+name: Architecture Decision Record (ADR)
+description: Propose a decision that should be captured in docs/adr/.
+labels: ["adr", "decision"]
+body:
+  - type: input
+    id: title
+    attributes:
+      label: ADR title
+      placeholder: e.g. "Use NATS JetStream over Kafka for event bus"
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Why is a decision needed? What constraints apply?
+    validations:
+      required: true
+  - type: textarea
+    id: decision
+    attributes:
+      label: Proposed decision
+    validations:
+      required: true
+  - type: textarea
+    id: consequences
+    attributes:
+      label: Consequences
+      description: Trade-offs, follow-ups, reversibility.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered

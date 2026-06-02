@@ -1,0 +1,50 @@
+name: scaffold-smoke
+
+on:
+  pull_request:
+    paths:
+      - "tools/scripts/plop/**"
+      - ".claude/skills/new-*/**"
+      - "package.json"
+      - "pnpm-workspace.yaml"
+      - "turbo.json"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: 20
+  PNPM_VERSION: 9
+
+jobs:
+  generators:
+    name: run generators on a temp workspace
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Generate app, lib, service
+        run: |
+          pnpm new-app app.ci --template standard --yes
+          pnpm new-lib lib.ci --yes
+          pnpm new-service service.ci --yes
+      - name: Typecheck & build generated workspace
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm typecheck
+          pnpm build
+      - name: Confirm directories exist
+        run: |
+          test -d apps/app.ci
+          test -d packages/lib.ci
+          test -d services/service.ci
