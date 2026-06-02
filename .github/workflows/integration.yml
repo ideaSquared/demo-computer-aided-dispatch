@@ -9,6 +9,7 @@ on:
       - "packages/db/**"
       - "infra/docker-compose*.yml"
       - "tools/scripts/smoke.ts"
+      - ".dockerignore"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
