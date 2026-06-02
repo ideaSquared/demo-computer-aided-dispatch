@@ -24,6 +24,10 @@
     "smoke": "tsx tools/scripts/smoke.ts",
     "dev:deps": "docker compose -f infra/docker-compose.deps.yml up -d",
     "dev:deps:down": "docker compose -f infra/docker-compose.deps.yml down",
+    "dev:docker": "docker compose -f infra/docker-compose.dev.yml watch",
+    "dev:docker:down": "docker compose -f infra/docker-compose.dev.yml down",
+    "stack": "docker compose -f infra/docker-compose.yml up -d --build",
+    "stack:down": "docker compose -f infra/docker-compose.yml down",
     "prepare": "husky"
   },
   "devDependencies": {

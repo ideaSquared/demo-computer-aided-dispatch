@@ -1,0 +1,30 @@
+# syntax=docker/dockerfile:1.7
+#
+# Shared DEV image for every TS service. Unlike the per-service production
+# Dockerfiles (multi-stage, `node dist/index.js`), this is a single image the
+# whole workspace runs from in watch mode:
+#
+#   - installs the full workspace (so `workspace:*` + the @cad/* symlinks resolve)
+#   - builds the shared libs once, so `@cad/observability` et al. have a dist/
+#   - each service container overrides `command` to `pnpm --filter <svc> dev`
+#     (tsx watch) and Compose Watch syncs changed source in from the host.
+#
+# node_modules + dist live ONLY in this image — never bind-mounted — which is
+# what keeps it working identically on Windows and Linux.
+FROM node:22-alpine
+RUN apk add --no-cache libc6-compat && corepack enable
+WORKDIR /app
+
+# Manifests first for layer caching, then the rest of the workspace.
+COPY pnpm-workspace.yaml pnpm-lock.yaml package.json tsconfig.base.json .npmrc ./
+COPY packages ./packages
+COPY services ./services
+COPY tools ./tools
+COPY apps ./apps
+
+RUN pnpm install --frozen-lockfile
+# Build the shared libraries so services can resolve @cad/* → dist at runtime.
+RUN pnpm build
+
+# Overridden per service in docker-compose.dev.yml.
+CMD ["node", "--version"]

@@ -23,12 +23,19 @@ pnpm install
 
 ## Run
 
+Two interchangeable dev modes — both hot-reload:
+
 ```bash
+# A. Local: services on host, deps in Docker
 pnpm dev:deps           # Postgres + PostGIS, Redis, NATS, Jaeger
-pnpm dev                # all services + apps via Turborepo
+pnpm dev                # all services + apps via Turborepo (watch)
+
+# B. Docker: everything in containers, source synced from host
+pnpm dev:docker         # docker compose watch — great on Windows
 ```
 
-Jaeger UI at <http://localhost:16686>.
+Jaeger UI at <http://localhost:16686>. Full comparison and the
+production-like `pnpm stack` are in [docs/development.md](docs/development.md).
 
 ## Test
 

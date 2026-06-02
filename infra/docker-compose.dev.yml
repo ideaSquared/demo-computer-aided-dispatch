@@ -1,0 +1,179 @@
+# Docker DEV stack — hot-reload, run-in-container.
+#
+#   docker compose -f infra/docker-compose.dev.yml watch
+#
+# Use `watch` (not `up`): Compose watches the HOST filesystem and syncs changed
+# source into the running containers — reliable on Windows, where raw bind-mount
+# file events into a Linux container are flaky. The in-container `tsx watch`
+# then reloads on the synced write.
+#
+# Hot-reload model (same as local `pnpm dev`):
+#   - edit a service's own src/  -> synced -> tsx reloads instantly
+#   - edit a shared lib / deps   -> Compose rebuilds the image
+#
+# Deps (Postgres/Redis/NATS/Jaeger) come from the shared deps file.
+name: cad-dev
+
+include:
+  - path: docker-compose.deps.yml
+
+# ---- shared bits -----------------------------------------------------------
+x-dev-build: &dev-build
+  build:
+    context: ..
+    dockerfile: infra/Dockerfile.dev
+  restart: unless-stopped
+  depends_on:
+    postgres:
+      condition: service_healthy
+    nats:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+
+x-dev-env: &dev-env
+  NODE_ENV: development
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+  NATS_URL: nats://nats:4222
+  REDIS_URL: redis://redis:6379
+
+services:
+  service-gateway:
+    <<: *dev-build
+    command: pnpm --filter @cad/service.gateway dev
+    ports: ["5000:5000"]
+    environment:
+      <<: *dev-env
+      PORT: "5000"
+    develop:
+      watch:
+        - { action: sync, path: ../services/service.gateway/src, target: /app/services/service.gateway/src }
+        - { action: rebuild, path: ../services/service.gateway/package.json }
+        - { action: rebuild, path: ../packages }
+        - { action: rebuild, path: ../pnpm-lock.yaml }
+
+  service-auth:
+    <<: *dev-build
+    command: pnpm --filter @cad/service.auth dev
+    ports: ["5010:5010"]
+    environment:
+      <<: *dev-env
+      PORT: "5010"
+      DATABASE_URL: postgres://cad:cad@postgres:5432/cad
+      DB_SCHEMA: auth
+    develop:
+      watch:
+        - { action: sync, path: ../services/service.auth/src, target: /app/services/service.auth/src }
+        - { action: rebuild, path: ../services/service.auth/package.json }
+        - { action: rebuild, path: ../packages }
+        - { action: rebuild, path: ../pnpm-lock.yaml }
+
+  service-incident:
+    <<: *dev-build
+    command: pnpm --filter @cad/service.incident dev
+    ports: ["5020:5020"]
+    environment:
+      <<: *dev-env
+      PORT: "5020"
+      DATABASE_URL: postgres://cad:cad@postgres:5432/cad
+      DB_SCHEMA: incident
+    develop:
+      watch:
+        - { action: sync, path: ../services/service.incident/src, target: /app/services/service.incident/src }
+        - { action: rebuild, path: ../services/service.incident/package.json }
+        - { action: rebuild, path: ../packages }
+        - { action: rebuild, path: ../pnpm-lock.yaml }
+
+  service-dispatch:
+    <<: *dev-build
+    command: pnpm --filter @cad/service.dispatch dev
+    ports: ["5030:5030"]
+    environment:
+      <<: *dev-env
+      PORT: "5030"
+    develop:
+      watch:
+        - { action: sync, path: ../services/service.dispatch/src, target: /app/services/service.dispatch/src }
+        - { action: rebuild, path: ../services/service.dispatch/package.json }
+        - { action: rebuild, path: ../packages }
+        - { action: rebuild, path: ../pnpm-lock.yaml }
+
+  service-resource:
+    <<: *dev-build
+    command: pnpm --filter @cad/service.resource dev
+    ports: ["5040:5040"]
+    environment:
+      <<: *dev-env
+      PORT: "5040"
+      DATABASE_URL: postgres://cad:cad@postgres:5432/cad
+      DB_SCHEMA: resource
+    develop:
+      watch:
+        - { action: sync, path: ../services/service.resource/src, target: /app/services/service.resource/src }
+        - { action: rebuild, path: ../services/service.resource/package.json }
+        - { action: rebuild, path: ../packages }
+        - { action: rebuild, path: ../pnpm-lock.yaml }
+
+  service-geo:
+    <<: *dev-build
+    command: pnpm --filter @cad/service.geo dev
+    ports: ["5050:5050"]
+    environment:
+      <<: *dev-env
+      PORT: "5050"
+      DATABASE_URL: postgres://cad:cad@postgres:5432/cad
+      DB_SCHEMA: geo
+    develop:
+      watch:
+        - { action: sync, path: ../services/service.geo/src, target: /app/services/service.geo/src }
+        - { action: rebuild, path: ../services/service.geo/package.json }
+        - { action: rebuild, path: ../packages }
+        - { action: rebuild, path: ../pnpm-lock.yaml }
+
+  service-notification:
+    <<: *dev-build
+    command: pnpm --filter @cad/service.notification dev
+    ports: ["5065:5065"]
+    environment:
+      <<: *dev-env
+      PORT: "5065"
+    develop:
+      watch:
+        - { action: sync, path: ../services/service.notification/src, target: /app/services/service.notification/src }
+        - { action: rebuild, path: ../services/service.notification/package.json }
+        - { action: rebuild, path: ../packages }
+        - { action: rebuild, path: ../pnpm-lock.yaml }
+
+  service-audit:
+    <<: *dev-build
+    command: pnpm --filter @cad/service.audit dev
+    ports: ["5070:5070"]
+    environment:
+      <<: *dev-env
+      PORT: "5070"
+      DATABASE_URL: postgres://cad:cad@postgres:5432/cad
+      DB_SCHEMA: audit
+    develop:
+      watch:
+        - { action: sync, path: ../services/service.audit/src, target: /app/services/service.audit/src }
+        - { action: rebuild, path: ../services/service.audit/package.json }
+        - { action: rebuild, path: ../packages }
+        - { action: rebuild, path: ../pnpm-lock.yaml }
+
+  # Python service — uvicorn --reload gives in-process hot reload; Compose
+  # Watch syncs the source in. Reuses the production triage Dockerfile.
+  service-triage:
+    build:
+      context: ..
+      dockerfile: services/triage/Dockerfile
+    command: ["python", "-m", "uvicorn", "triage.app:app", "--reload", "--host", "0.0.0.0", "--port", "5080"]
+    ports: ["5080:5080"]
+    environment:
+      PORT: "5080"
+      OLLAMA_URL: http://ollama:11434
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+    restart: unless-stopped
+    develop:
+      watch:
+        - { action: sync, path: ../services/triage/src, target: /app/src }
+        - { action: rebuild, path: ../services/triage/pyproject.toml }

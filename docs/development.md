@@ -134,47 +134,100 @@ lint-staged) are installed automatically via the `prepare` script.
 
 ---
 
-## The dev loop
+## Two ways to run
 
-### Bring up the dependency stack
+Both give hot reload on the code you edit. Pick whichever you prefer — they're
+interchangeable and share the same dependency stack.
+
+| | **A. Local (host)** | **B. Docker dev** |
+| --- | --- | --- |
+| Command | `pnpm dev:deps` + `pnpm dev` | `pnpm dev:docker` |
+| Services run | on your host via `tsx watch` | inside containers via `tsx watch` |
+| Deps (PG/Redis/NATS/Jaeger) | in Docker | in Docker |
+| Hot reload | edit a service's `src/` → reloads | edit a service's `src/` → synced → reloads |
+| Needs Node/pnpm on host | yes | no (only Docker) |
+| Best for | fastest iteration, debugger attach | parity with prod images, "works the same for everyone" |
+
+In **both** modes the reload model is the same: editing a **service's own
+`src/`** reloads it instantly; editing a **shared lib** under `packages/` or
+changing dependencies triggers a rebuild (a `pnpm build` locally, or an
+automatic image rebuild under Docker).
+
+### A. Local (host)
 
 The services need Postgres, Redis, NATS, and Jaeger. They run in Docker; your
 code runs on the host.
 
 ```bash
-pnpm dev:deps          # docker compose up -d for the deps only
-pnpm dev:deps:down     # stop them
+pnpm dev:deps          # start deps (Postgres/Redis/NATS/Jaeger)
+pnpm dev               # every service + app in watch mode (Turborepo)
+pnpm dev:deps:down     # stop the deps when done
 ```
 
 Jaeger UI: <http://localhost:16686>. Postgres `localhost:5432`
 (`cad`/`cad`), Redis `localhost:6379`, NATS `localhost:4222`.
 
-### Run the code
-
-```bash
-pnpm dev               # every service + app in watch mode (Turborepo)
-```
-
-Or scope to one package:
+Scope to one package:
 
 ```bash
 pnpm --filter @cad/service.incident dev
 pnpm --filter @cad/app.console dev      # once an app exists
 ```
 
-### Verify
+### B. Docker dev (run everything in containers)
+
+Prefer working in Docker? One command builds a dev image, starts the deps + all
+services, and **watches your source**:
+
+```bash
+pnpm dev:docker        # = docker compose -f infra/docker-compose.dev.yml watch
+```
+
+This uses [Docker Compose Watch](https://docs.docker.com/compose/how-tos/file-watch/)
+(Compose v2.22+, bundled with Docker Desktop). Compose watches your **host**
+files and syncs changes into the running containers — which is why it reloads
+reliably on Windows, where raw bind-mount file events into a Linux container
+often don't fire. The container's `tsx watch` reloads on the synced write.
+
+- Edit `services/<svc>/src/**` → synced → that service reloads.
+- Edit `packages/**`, a service `package.json`, or `pnpm-lock.yaml` → Compose
+  rebuilds the image automatically.
+- `node_modules` and built `dist/` live **only inside the image**, never
+  bind-mounted — so there's no host/container or Windows/Linux mismatch.
+
+Same ports as local (gateway 5000 … triage 5080; notification on **5065**).
+Stop it with:
+
+```bash
+pnpm dev:docker:down
+```
+
+> First run builds the dev image (installs the workspace + builds the libs), so
+> it takes a minute; subsequent starts are layer-cached.
+
+### Verify (either mode)
 
 ```bash
 pnpm typecheck         # tsc across the graph
 pnpm lint              # Biome
 pnpm test              # Vitest across all packages
 pnpm build             # tsup / vite production build
-pnpm smoke             # probe each service's /health (needs the stack up)
+pnpm smoke             # probe each service's /health (needs a stack running)
 ```
 
 `pnpm smoke` is the end-to-end "is the whole thing alive" check — it boots
-nothing itself, so run `pnpm dev:deps` + the services (or the full Docker
-stack, see deployment) first.
+nothing itself, so have one of the two stacks (or the prod-like `pnpm stack`)
+running first.
+
+### Production-like full stack
+
+To run the **built** images (no watch, `node dist/index.js` — what deployment
+uses), see [`deployment.md`](./deployment.md), or locally:
+
+```bash
+pnpm stack             # docker compose -f infra/docker-compose.yml up -d --build
+pnpm stack:down
+```
 
 ---
 
@@ -221,6 +274,8 @@ It's the only Python in the repo; everything else is TypeScript.
 | Docker build can't find files / slow on Windows | Repo on the Windows FS but built from WSL | Clone the repo inside the WSL 2 filesystem where you build it. |
 | Vite/Vitest can't resolve a `@cad/*` package | Missing install after adding a workspace dep | Re-run `pnpm install`. |
 | `ERR_MODULE_NOT_FOUND: ...@cad/observability/dist/index.js` | A shared lib hasn't been built; its `dist/` is missing | `pnpm dev` builds the libs first automatically. If you run a single service directly (`pnpm --filter @cad/service.x dev`), run `pnpm build` once first, or just use `pnpm dev`. |
+| `pnpm dev:docker` → `unknown command "watch"` or watch ignored | Docker Compose < v2.22 | Update Docker Desktop / the Compose plugin. As a fallback, `pnpm stack` runs the built images (no hot reload). |
+| `pnpm dev:docker` edits not reloading | Compose Watch not actually watching, or editing a lib (not a service `src/`) | Make sure you ran `dev:docker` (which calls `compose watch`, not `up`); lib edits under `packages/` trigger a rebuild, not a live sync. |
 
 ---
 

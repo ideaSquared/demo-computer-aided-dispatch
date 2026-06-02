@@ -122,6 +122,12 @@ The generator prints `compose.fragment.yml` to stdout. Paste it into
 `infra/docker-compose.yml` under `services:`. The fragment includes a unique
 gRPC port (next available 5005x), DB schema, and NATS subject prefix.
 
+For the **Docker dev** stack, add a matching entry to
+`infra/docker-compose.dev.yml` too: copy an existing service block, swap the
+name/port/`DB_SCHEMA`, set `command: pnpm --filter @cad/service.<name> dev`,
+and point the `develop.watch` sync at `../services/service.<name>/src`. (Local
+`pnpm dev` needs no such step — Turborepo picks the service up automatically.)
+
 ## Step 8 — Database schema
 
 This service owns a single Postgres schema named after the service. Create
