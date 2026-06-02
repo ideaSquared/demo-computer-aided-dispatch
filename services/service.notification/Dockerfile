@@ -27,10 +27,13 @@ FROM node:20-alpine AS runtime
 RUN apk add --no-cache tini
 WORKDIR /app
 ENV NODE_ENV=production
-# Preserve the workspace layout so Node's module-resolution algorithm finds
-# the service's node_modules (which contain pnpm symlinks into the root
-# /app/node_modules/.pnpm store).
+# Preserve the full workspace layout. The pnpm symlinks under
+# services/<name>/node_modules and packages/<lib>/node_modules point at
+# /app/node_modules/.pnpm and at /app/packages/<lib>; all three trees must
+# exist in the image. @opentelemetry/* in particular cannot be bundled by
+# tsup because it patches modules via dynamic require() at runtime.
 COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/packages ./packages
 COPY --from=build /app/services/service.notification/node_modules ./services/service.notification/node_modules
 COPY --from=build /app/services/service.notification/dist ./services/service.notification/dist
 COPY --from=build /app/services/service.notification/package.json ./services/service.notification/package.json
