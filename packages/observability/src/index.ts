@@ -29,8 +29,8 @@ export function initTracing(serviceName: string): TracingHandle {
       { NodeSDK },
       { OTLPTraceExporter },
       { getNodeAutoInstrumentations },
-      { Resource },
-      semconv,
+      { resourceFromAttributes },
+      { ATTR_SERVICE_NAME },
     ] = await Promise.all([
       import('@opentelemetry/sdk-node'),
       import('@opentelemetry/exporter-trace-otlp-http'),
@@ -44,8 +44,8 @@ export function initTracing(serviceName: string): TracingHandle {
       : {};
 
     const sdk = new NodeSDK({
-      resource: new Resource({
-        [semconv.SemanticResourceAttributes.SERVICE_NAME]: serviceName,
+      resource: resourceFromAttributes({
+        [ATTR_SERVICE_NAME]: serviceName,
       }),
       traceExporter: new OTLPTraceExporter(exporterConfig),
       instrumentations: [getNodeAutoInstrumentations()],
