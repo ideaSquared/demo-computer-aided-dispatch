@@ -48,9 +48,25 @@ jobs:
           echo "Stack failed to come up." >&2
           docker compose -f infra/docker-compose.yml logs
           exit 1
+      - name: Container status before smoke
+        run: |
+          echo '::group::compose ps'
+          docker compose -f infra/docker-compose.yml ps -a
+          echo '::endgroup::'
       - name: Smoke
         run: pnpm smoke
-      - name: Capture logs on failure
+      - name: Dump container logs on failure
+        if: failure()
+        run: |
+          echo '::group::compose ps --format json'
+          docker compose -f infra/docker-compose.yml ps -a --format json || true
+          echo '::endgroup::'
+          for svc in service-gateway service-auth service-incident service-dispatch service-resource service-geo service-notification service-audit service-triage postgres redis nats jaeger; do
+            echo "::group::logs $svc"
+            docker compose -f infra/docker-compose.yml logs --no-color --tail=100 "$svc" || true
+            echo '::endgroup::'
+          done
+      - name: Save full logs as artifact
         if: failure()
         run: docker compose -f infra/docker-compose.yml logs --no-color > compose-logs.txt
       - name: Upload logs
