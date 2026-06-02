@@ -23,6 +23,16 @@ updates:
       vanilla-extract:
         patterns:
           - "@vanilla-extract/*"
+      opentelemetry:
+        # OTel SDK packages share a major-version cycle and must move
+        # together. Single-package bumps fail typecheck because Resource +
+        # SemanticResourceAttributes change shape between 1.x and 2.x.
+        patterns:
+          - "@opentelemetry/*"
+      fastify:
+        patterns:
+          - fastify
+          - "@fastify/*"
   - package-ecosystem: github-actions
     directory: /
     schedule:
