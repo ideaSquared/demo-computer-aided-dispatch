@@ -160,6 +160,28 @@ services:
         - { action: rebuild, path: ../packages }
         - { action: rebuild, path: ../pnpm-lock.yaml }
 
+  # Operator console — Vite dev server, proxies /ws + /api + /health to the
+  # gateway over the compose network. The shared dev image already has the
+  # workspace installed, so `vite` just runs against ../apps/app.console.
+  app-console:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.dev
+    restart: unless-stopped
+    command: pnpm --filter @cad/app.console dev
+    ports: ["3000:3000"]
+    environment:
+      <<: *dev-env
+      DOCKER_ENV: "true"
+    depends_on:
+      - service-gateway
+    develop:
+      watch:
+        - { action: sync, path: ../apps/app.console/src, target: /app/apps/app.console/src }
+        - { action: rebuild, path: ../apps/app.console/package.json }
+        - { action: rebuild, path: ../packages }
+        - { action: rebuild, path: ../pnpm-lock.yaml }
+
   # Python service — uvicorn --reload gives in-process hot reload; Compose
   # Watch syncs the source in. Reuses the production triage Dockerfile.
   service-triage:

@@ -4,11 +4,12 @@ on:
   pull_request:
     paths:
       - "services/**"
+      - "apps/**"
       - "packages/events/**"
       - "packages/proto/**"
       - "packages/db/**"
       - "packages/redis/**"
-      - "infra/docker-compose*.yml"
+      - "infra/**"
       - "tools/scripts/smoke.ts"
       - "tools/scripts/ws-smoke.ts"
       - ".dockerignore"
@@ -64,7 +65,7 @@ jobs:
           echo '::group::compose ps --format json'
           docker compose -f infra/docker-compose.yml ps -a --format json || true
           echo '::endgroup::'
-          for svc in service-gateway service-auth service-incident service-dispatch service-resource service-geo service-notification service-audit service-triage postgres redis nats jaeger; do
+          for svc in service-gateway service-auth service-incident service-dispatch service-resource service-geo service-notification service-audit service-triage app-console postgres redis nats jaeger; do
             echo "::group::logs $svc"
             docker compose -f infra/docker-compose.yml logs --no-color --tail=100 "$svc" || true
             echo '::endgroup::'
@@ -125,7 +126,7 @@ jobs:
       - name: Dump container logs on failure
         if: failure()
         run: |
-          for svc in service-gateway service-auth service-incident service-dispatch service-resource service-geo service-notification service-audit service-triage postgres redis nats jaeger; do
+          for svc in service-gateway service-auth service-incident service-dispatch service-resource service-geo service-notification service-audit service-triage app-console postgres redis nats jaeger; do
             echo "::group::logs $svc"
             docker compose -f infra/docker-compose.dev.yml logs --no-color --tail=100 "$svc" || true
             echo '::endgroup::'
