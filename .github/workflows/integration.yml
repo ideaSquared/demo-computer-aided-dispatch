@@ -17,6 +17,7 @@ on:
       - "tools/scripts/incident-http-smoke.ts"
       - "tools/scripts/resource-http-smoke.ts"
       - "tools/scripts/dispatch-loop-smoke.ts"
+      - "tools/scripts/recommend-smoke.ts"
       - ".dockerignore"
 
 concurrency:
@@ -84,6 +85,10 @@ jobs:
       # assert the unit flips to 'dispatched' via the NATS subscriber.
       - name: Dispatch→unit-status loop smoke
         run: pnpm smoke:dispatch-loop
+      # Phase 3 recommender: rank available units by distance to an incident
+      # via the dispatch service (incident Get + resource ListUnits → ranking).
+      - name: Recommend-units smoke (gateway)
+        run: pnpm smoke:recommend
       - name: Dump container logs on failure
         if: failure()
         run: |
@@ -170,6 +175,10 @@ jobs:
       # assert the unit flips to 'dispatched' via the NATS subscriber.
       - name: Dispatch→unit-status loop smoke
         run: pnpm smoke:dispatch-loop
+      # Phase 3 recommender: rank available units by distance to an incident
+      # via the dispatch service (incident Get + resource ListUnits → ranking).
+      - name: Recommend-units smoke (gateway)
+        run: pnpm smoke:recommend
       - name: Dump container logs on failure
         if: failure()
         run: |

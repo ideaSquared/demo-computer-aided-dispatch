@@ -2,9 +2,11 @@ import { connect } from '@cad/events';
 import { createRedisSubscriber } from '@cad/redis';
 import websocket from '@fastify/websocket';
 import Fastify from 'fastify';
+import { createDispatchClient } from './clients/dispatch.js';
 import { createIncidentClient } from './clients/incident.js';
 import { createResourceClient } from './clients/resource.js';
 import { config } from './config.js';
+import { registerDispatchRoutes } from './http/dispatch.js';
 import { registerIncidentRoutes } from './http/incidents.js';
 import { registerUnitRoutes } from './http/units.js';
 import { makeConnectionHandler } from './ws/connection.js';
@@ -34,6 +36,10 @@ app.log.info({ incidentGrpc: config.INCIDENT_GRPC_URL }, 'incident HTTP command 
 const resourceClient = createResourceClient(config.RESOURCE_GRPC_URL);
 registerUnitRoutes(app, resourceClient);
 app.log.info({ resourceGrpc: config.RESOURCE_GRPC_URL }, 'units HTTP command path ready');
+
+const dispatchClient = createDispatchClient(config.DISPATCH_GRPC_URL);
+registerDispatchRoutes(app, dispatchClient);
+app.log.info({ dispatchGrpc: config.DISPATCH_GRPC_URL }, 'dispatch HTTP query path ready');
 
 await app.register(websocket);
 
@@ -66,6 +72,7 @@ async function shutdown(signal: string): Promise<void> {
     await app.close();
     incidentClient.close();
     resourceClient.close();
+    dispatchClient.close();
     await nats.drain();
     await redisSub.quit();
   } finally {
