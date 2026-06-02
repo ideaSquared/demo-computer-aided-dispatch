@@ -9,6 +9,8 @@ import { withSpan } from '@cad/observability';
 import { appendAndProject, ConcurrencyError, loadEvents } from '../db/repository.js';
 import { assign, fold, InvariantError } from '../domain/index.js';
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 interface Ctx {
   db: DbClient;
   nats: NatsConnection;
@@ -38,10 +40,18 @@ export function subscribeIncidents(ctx: Ctx): Promise<void> {
   const newId = ctx.newId ?? (() => randomUUID());
 
   async function assignUnit(unitId: string, incidentId: string): Promise<void> {
+    // Incidents carry whatever unit-id strings the operator typed — the seed
+    // uses `eng-12`, dispatch tests use `unit-a`. Our aggregate ids are uuids
+    // (`unit_events.aggregate_id` is a uuid column), so a non-uuid can't be
+    // one of ours: skip it BEFORE querying, or Postgres rejects it with 22P02
+    // and the rethrow would kill the whole subscriber.
+    if (!UUID_RE.test(unitId)) {
+      return;
+    }
     const { events: history, version: expectedVersion } = await loadEvents(ctx.db, unitId);
     const state = fold(history);
     if (state === null) {
-      // Not a unit we manage — incidents reference arbitrary ids. Skip.
+      // A real uuid, but not a unit we manage. Skip.
       return;
     }
     if (state.status !== 'available') {
@@ -94,7 +104,18 @@ export function subscribeIncidents(ctx: Ctx): Promise<void> {
         span.setAttribute('incident.id', event.incidentId);
         span.setAttribute('dispatch.unit.count', event.unitIds.length);
         for (const unitId of event.unitIds) {
-          await assignUnit(unitId, event.incidentId);
+          // One unit's failure must never break the drain for the others (or
+          // for future events) — the subscribe helper rethrows on a handler
+          // error and would kill this subscription. Log and carry on; assign
+          // already handles the expected skips (unknown / busy / conflict).
+          try {
+            await assignUnit(unitId, event.incidentId);
+          } catch (err) {
+            ctx.log.error(
+              { unitId, incidentId: event.incidentId, err: String(err) },
+              'assign failed',
+            );
+          }
         }
       }),
   );
