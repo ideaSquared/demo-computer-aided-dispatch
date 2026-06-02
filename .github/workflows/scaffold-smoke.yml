@@ -4,7 +4,6 @@ on:
   pull_request:
     paths:
       - "tools/scripts/plop/**"
-      - ".claude/skills/new-*/**"
       - "package.json"
       - "pnpm-workspace.yaml"
       - "turbo.json"
@@ -21,6 +20,7 @@ jobs:
   generators:
     name: run generators on a temp workspace
     runs-on: ubuntu-latest
+    if: hashFiles('pnpm-lock.yaml') != ''
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4

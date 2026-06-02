@@ -17,9 +17,30 @@ env:
   TURBO_TELEMETRY_DISABLED: 1
 
 jobs:
+  preflight:
+    name: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    outputs:
+      bootstrapped: ${{ steps.check.outputs.bootstrapped }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: check
+        name: Is the workspace bootstrapped?
+        run: |
+          if [ -f pnpm-lock.yaml ]; then
+            echo "bootstrapped=true" >> "$GITHUB_OUTPUT"
+            echo "pnpm-lock.yaml found — running the full pipeline."
+          else
+            echo "bootstrapped=false" >> "$GITHUB_OUTPUT"
+            echo "No pnpm-lock.yaml — PR 2 hasn't landed yet. Downstream jobs will be skipped."
+          fi
+
   install:
     name: install
     runs-on: ubuntu-latest
+    needs: preflight
+    if: needs.preflight.outputs.bootstrapped == 'true'
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
@@ -30,18 +51,13 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
-      - name: Verify lockfile if present
-        run: |
-          if [ -f pnpm-lock.yaml ]; then
-            pnpm install --frozen-lockfile
-          else
-            echo "No pnpm-lock.yaml yet (pre-PR-2). Skipping install."
-          fi
+      - run: pnpm install --frozen-lockfile
 
   typecheck:
     name: typecheck
     runs-on: ubuntu-latest
-    needs: install
+    needs: [preflight, install]
+    if: needs.preflight.outputs.bootstrapped == 'true'
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -59,18 +75,14 @@ jobs:
           key: turbo-typecheck-${{ github.sha }}
           restore-keys: |
             turbo-typecheck-
-      - run: |
-          if [ -f pnpm-lock.yaml ]; then
-            pnpm install --frozen-lockfile
-            pnpm typecheck
-          else
-            echo "Workspace not yet scaffolded. No-op."
-          fi
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
 
   lint:
     name: lint
     runs-on: ubuntu-latest
-    needs: install
+    needs: [preflight, install]
+    if: needs.preflight.outputs.bootstrapped == 'true'
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -88,18 +100,14 @@ jobs:
           key: turbo-lint-${{ github.sha }}
           restore-keys: |
             turbo-lint-
-      - run: |
-          if [ -f pnpm-lock.yaml ]; then
-            pnpm install --frozen-lockfile
-            pnpm lint
-          else
-            echo "Workspace not yet scaffolded. No-op."
-          fi
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
 
   test:
     name: test
     runs-on: ubuntu-latest
-    needs: install
+    needs: [preflight, install]
+    if: needs.preflight.outputs.bootstrapped == 'true'
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -117,13 +125,8 @@ jobs:
           key: turbo-test-${{ github.sha }}
           restore-keys: |
             turbo-test-
-      - run: |
-          if [ -f pnpm-lock.yaml ]; then
-            pnpm install --frozen-lockfile
-            pnpm test -- --reporter=junit --outputFile=junit.xml || pnpm test
-          else
-            echo "Workspace not yet scaffolded. No-op."
-          fi
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test -- --reporter=junit --outputFile=junit.xml || pnpm test
       - name: Upload test report
         if: always() && hashFiles('**/junit.xml') != ''
         uses: actions/upload-artifact@v4
@@ -134,7 +137,8 @@ jobs:
   build:
     name: build
     runs-on: ubuntu-latest
-    needs: [typecheck, lint]
+    needs: [preflight, typecheck, lint]
+    if: needs.preflight.outputs.bootstrapped == 'true'
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -152,13 +156,8 @@ jobs:
           key: turbo-build-${{ github.sha }}
           restore-keys: |
             turbo-build-
-      - run: |
-          if [ -f pnpm-lock.yaml ]; then
-            pnpm install --frozen-lockfile
-            pnpm build
-          else
-            echo "Workspace not yet scaffolded. No-op."
-          fi
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
 
   commitlint:
     name: commitlint
