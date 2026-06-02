@@ -2,6 +2,7 @@ import { connect } from '@cad/events';
 import { createRedisClient } from '@cad/redis';
 import Fastify from 'fastify';
 import { config } from './config.js';
+import { subscribeIncidents } from './subscribers/incident.js';
 import { subscribePresence } from './subscribers/presence.js';
 
 const app = Fastify({
@@ -25,6 +26,11 @@ app.log.info({ nats: config.NATS_URL, redis: config.REDIS_URL }, 'connected to d
 const presenceLoop = subscribePresence({ nats, redis, log: app.log });
 void presenceLoop.catch((err) => {
   app.log.error({ err }, 'presence subscriber crashed');
+});
+
+const incidentLoop = subscribeIncidents({ nats, redis, log: app.log });
+void incidentLoop.catch((err) => {
+  app.log.error({ err }, 'incident subscriber crashed');
 });
 
 const port = config.PORT;

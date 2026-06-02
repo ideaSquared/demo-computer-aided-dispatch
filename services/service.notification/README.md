@@ -12,9 +12,23 @@ The canonical product/architecture spec is the Notion page:
 
 Notion is the source of truth. This README is a navigation aid only.
 
-## Status (PR 3)
+## Status
 
-Stub. HTTP `/health` only. Boot-proven by `pnpm smoke`. Domain logic, gRPC handlers, DB migrations, and NATS subscribers land in subsequent PRs against the PRD.
+The NATS → Redis fan-out spine. Pure consumer: subscribes to domain events
+on NATS and re-publishes each to the Redis pub/sub channel(s) the gateway
+forwards to WebSocket clients. The subject → topic mapping is owned by
+`topicsFor` in `@cad/events` (the public contract); this service just applies
+it.
+
+Subscribers (`src/subscribers/`):
+
+| Subscriber | NATS subjects | Redis topics |
+| --- | --- | --- |
+| `presence` | `presence.changed` | `presence`, `operator:<id>` |
+| `incident` | `incident.opened` / `triaged` / `dispatched` / `unitArrived` / `resolved` / `cancelled` | `incidents`, `incident:<id>` |
+
+Each event is validated against its `@cad/events` schema on consume; a
+malformed payload is logged and dropped, never fanned out.
 
 ## Dev
 

@@ -13,6 +13,7 @@ on:
       - "tools/scripts/smoke.ts"
       - "tools/scripts/ws-smoke.ts"
       - "tools/scripts/grpc-smoke.ts"
+      - "tools/scripts/incident-ws-smoke.ts"
       - ".dockerignore"
 
 concurrency:
@@ -67,6 +68,9 @@ jobs:
         run: pnpm --filter @cad/proto build
       - name: gRPC smoke (incident)
         run: pnpm smoke:grpc
+      # Incident event spine: NATS → notification → Redis → gateway → ws.
+      - name: Incident WS smoke
+        run: pnpm smoke:incident-ws
       - name: Dump container logs on failure
         if: failure()
         run: |
@@ -140,6 +144,9 @@ jobs:
         run: pnpm --filter @cad/proto build
       - name: gRPC smoke (incident)
         run: pnpm smoke:grpc
+      # Incident event spine: NATS → notification → Redis → gateway → ws.
+      - name: Incident WS smoke
+        run: pnpm smoke:incident-ws
       - name: Dump container logs on failure
         if: failure()
         run: |
