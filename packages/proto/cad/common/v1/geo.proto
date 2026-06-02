@@ -1,0 +1,14 @@
+// Shared geo primitives. Keep narrow — anything that drifts toward
+// service.geo's domain belongs in cad/geo/v1, not here.
+
+syntax = "proto3";
+
+package cad.common.v1;
+
+// WGS84 latitude/longitude pair. We're not modelling altitude or accuracy
+// in Phase 2; if either turns out to matter, add fields at the end (proto
+// field numbers are forever).
+message GeoPoint {
+  double lat = 1;
+  double lng = 2;
+}

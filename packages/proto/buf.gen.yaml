@@ -1,10 +1,18 @@
 version: v2
+
+# Local plugins keep codegen hermetic — no calls to api.buf.build, so this
+# works in restricted-network environments. ts-proto is the only target
+# until Phase 5 brings Python triage into the contract; at that point a
+# `protoc-gen-python` invocation lands here, sandboxed via service.triage's
+# Python toolchain (the Node workspace shouldn't pull pip deps).
 plugins:
-  - remote: buf.build/community/stephenh-ts-proto
+  - local: node_modules/.bin/protoc-gen-ts_proto
     out: gen/ts
     opt:
       - esModuleInterop=true
       - outputServices=grpc-js
       - useExactTypes=false
-  - remote: buf.build/protocolbuffers/python
-    out: gen/py
+      - importSuffix=.js
+      - useOptionals=messages
+      - unrecognizedEnum=false
+      - removeEnumPrefix=true

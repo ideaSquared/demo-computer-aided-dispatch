@@ -95,6 +95,8 @@ jobs:
             turbo-lint-
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
+      - name: buf lint (proto contracts)
+        run: pnpm --filter @cad/proto lint:proto
 
   test:
     name: test

@@ -21,5 +21,6 @@ overrides:
 # prebuilds wire-format speedups, biome unpacks a native binary).
 allowBuilds:
   "@biomejs/biome": true
+  "@bufbuild/buf": true
   esbuild: true
   protobufjs: true
