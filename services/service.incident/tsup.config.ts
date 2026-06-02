@@ -1,10 +1,27 @@
+import { readdirSync } from 'node:fs';
 import { defineConfig } from 'tsup';
 
+// Auto-discover migrations and emit each as its own ESM file under
+// `dist/migrations/<name>.js`. node-pg-migrate scans the directory at
+// runtime, so each migration must be a standalone entry (no tree-shake
+// into the main bundle) AND must live at a path that resolves the same
+// way in both build modes:
+//
+//   - dev (tsx watch):    `migrate.ts` runs from `src/db/migrate.ts`, so
+//                         `resolve(HERE, 'migrations') = src/db/migrations/`
+//                         (the source layout, which is correct).
+//   - prod (node dist):   `migrate.ts` is bundled into `dist/index.js`, so
+//                         `resolve(HERE, 'migrations') = dist/migrations/`,
+//                         which is why we remap output to `migrations/<n>`
+//                         instead of preserving `src/db/migrations/<n>`.
+const migrationEntries = Object.fromEntries(
+  readdirSync('src/db/migrations')
+    .filter((f) => f.endsWith('.ts'))
+    .map((f) => [`migrations/${f.replace(/\.ts$/, '')}`, `src/db/migrations/${f}`]),
+);
+
 export default defineConfig({
-  // Migration files are entrypoints too: node-pg-migrate `import()`s them
-  // at runtime by directory scan, so they must each be their own ESM file
-  // in `dist/db/migrations/` rather than getting tree-shaken into index.js.
-  entry: ['src/index.ts', 'src/db/migrations/*.ts'],
+  entry: { index: 'src/index.ts', ...migrationEntries },
   format: ['esm'],
   dts: false,
   sourcemap: true,
