@@ -98,11 +98,29 @@ service fans it out to every connected console.
 
 ## Troubleshooting
 
+- **`Bind for 0.0.0.0:5432 failed: port is already allocated`** — another
+  Postgres already holds port 5432 (a previous `pnpm stack`, or a
+  `pnpm dev:deps` you left running). `pnpm stack --build` aborts here *before*
+  recreating your containers, so whatever was running before keeps serving —
+  including a possibly-stale gateway. Free the port and rebuild:
+  ```bash
+  pnpm stack:down            # stop the full stack
+  pnpm dev:deps:down         # stop the deps-only Postgres if you started it
+  docker ps                  # nothing should still publish 0.0.0.0:5432
+  pnpm stack                 # --build now recreates everything from current code
+  ```
+- **`404 Route POST:/api/incidents not found`** — the gateway answering you is
+  an *older build* (likely left running because a previous `--build` aborted,
+  see above). Rebuild a fresh stack with the steps above; `pnpm seed` also
+  detects this and prints the same guidance.
+- **`500 … UNAVAILABLE … ECONNREFUSED …:5021` (or `:5041`)** — the gateway is
+  up but the incident (5021) / resource (5041) gRPC service is still migrating
+  and binding. `docker compose up -d` returns before services are *ready*.
+  Wait until `pnpm smoke` is all-green, then seed/click. `pnpm seed` now waits
+  for these routes to answer before seeding, so re-running it is safe.
 - **Console loads but the board is empty / "connecting" pill stays grey** —
   the gateway or incident service may still be starting. Re-run `pnpm smoke`;
   check `docker compose -f infra/docker-compose.yml logs service-incident`.
-- **`pnpm seed` errors** — the stack isn't up, or the gateway isn't reachable
-  on `:5000`. Boot it first.
 - **Nothing in the board after seeding** — make sure you opened the console
   with `?operator=…` (no identity ⇒ the gate screen, no board).
 
