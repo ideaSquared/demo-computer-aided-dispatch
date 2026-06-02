@@ -24,7 +24,7 @@ const portByService: Record<string, number> = {
   'service.dispatch': 5030,
   'service.resource': 5040,
   'service.geo': 5050,
-  'service.notification': 5060,
+  'service.notification': 5065,
   'service.audit': 5070,
   triage: 5080,
 };

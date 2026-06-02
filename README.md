@@ -73,7 +73,7 @@ repo-side stubs at `docs/prd/<service>.md` link to them.
 | dispatch       | Stateless unit-allocation recommender.                     | 5030 | [services/service.dispatch](services/service.dispatch)       | [docs/prd/dispatch.md](docs/prd/dispatch.md) |
 | resource       | Unit roster, status, last-known location.                  | 5040 | [services/service.resource](services/service.resource)       | [docs/prd/resource.md](docs/prd/resource.md) |
 | geo            | Geocoding, nearest-K, route ETA over PostGIS.              | 5050 | [services/service.geo](services/service.geo)                 | [docs/prd/geo.md](docs/prd/geo.md) |
-| notification   | NATS → Redis fan-out spine for WebSockets.                 | 5060 | [services/service.notification](services/service.notification) | [docs/prd/notification.md](docs/prd/notification.md) |
+| notification   | NATS → Redis fan-out spine for WebSockets.                 | 5065 | [services/service.notification](services/service.notification) | [docs/prd/notification.md](docs/prd/notification.md) |
 | audit          | Append-only audit log consumer.                            | 5070 | [services/service.audit](services/service.audit)             | [docs/prd/audit.md](docs/prd/audit.md) |
 | triage         | AI severity classification via local Ollama (Python).      | 5080 | [services/triage](services/triage)                       | [docs/prd/triage.md](docs/prd/triage.md) |
 

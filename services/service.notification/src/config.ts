@@ -7,7 +7,7 @@ import { z } from 'zod';
  */
 export const config = loadEnv(
   z.object({
-    PORT: z.coerce.number().default(5060),
+    PORT: z.coerce.number().default(5065),
     DATABASE_URL: z.string().url().optional(),
     NATS_URL: z.string().url().default('nats://localhost:4222'),
     REDIS_URL: z.string().url().optional(),

@@ -5,10 +5,10 @@ service-notification:
     context: ..
     dockerfile: services/service.notification/Dockerfile
   ports:
-    - "5060:5060"
+    - "5065:5065"
   environment:
     NODE_ENV: development
-    PORT: "5060"
+    PORT: "5065"
     OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
     NATS_URL: nats://nats:4222
     REDIS_URL: redis://redis:6379
