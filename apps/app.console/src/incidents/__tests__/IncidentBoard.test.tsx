@@ -4,8 +4,21 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Identity } from '../../presence/identity.js';
 import type { Incident, IncidentApi } from '../../services/incident.js';
 import { IncidentBoard } from '../IncidentBoard.js';
+import { useIncidents } from '../useIncidents.js';
 
 const identity: Identity = { operatorId: 'alex', displayName: 'Alex', tier: 'fire' };
+
+const noopSubscribe = () => () => undefined;
+
+/**
+ * The shell owns the incident data source and passes it down, so mount the
+ * board through the real `useIncidents` hook wired to a mock api — exercising
+ * the same path production uses.
+ */
+function Board({ api }: { api: IncidentApi }) {
+  const incidents = useIncidents({ subscribe: noopSubscribe, api });
+  return <IncidentBoard identity={identity} incidents={incidents} />;
+}
 
 function makeIncident(over: Partial<Incident> = {}): Incident {
   return {
@@ -38,8 +51,6 @@ function makeApi(over: Partial<IncidentApi> = {}): IncidentApi {
   };
 }
 
-const noopSubscribe = () => () => undefined;
-
 // No global vitest setup file in this app, so RTL's auto-cleanup isn't wired;
 // clean up explicitly so mounted boards don't bleed across cases.
 afterEach(cleanup);
@@ -47,7 +58,7 @@ afterEach(cleanup);
 describe('IncidentBoard', () => {
   it('lists open incidents from the client', async () => {
     const api = makeApi();
-    render(<IncidentBoard identity={identity} subscribe={noopSubscribe} api={api} />);
+    render(<Board api={api} />);
 
     expect(await screen.findByText('structure fire on 5th')).toBeInTheDocument();
     expect(api.list).toHaveBeenCalledTimes(1);
@@ -55,7 +66,7 @@ describe('IncidentBoard', () => {
 
   it('triage selection calls the triage endpoint with the current version', async () => {
     const api = makeApi();
-    render(<IncidentBoard identity={identity} subscribe={noopSubscribe} api={api} />);
+    render(<Board api={api} />);
 
     await screen.findByText('structure fire on 5th');
 
@@ -72,7 +83,7 @@ describe('IncidentBoard', () => {
 
   it('creates a new incident from the form', async () => {
     const api = makeApi({ list: vi.fn(async () => [] as ReadonlyArray<Incident>) });
-    render(<IncidentBoard identity={identity} subscribe={noopSubscribe} api={api} />);
+    render(<Board api={api} />);
 
     await screen.findByText(/no open incidents/i);
 

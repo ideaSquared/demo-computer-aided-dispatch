@@ -1,24 +1,22 @@
 import { Button, Stack } from '@cad/lib.ui';
 import { type FormEvent, useState } from 'react';
 import type { Identity } from '../presence/identity.js';
-import type { Incident, IncidentApi, Severity, Tier } from '../services/incident.js';
-import { SEVERITIES, TIERS } from '../services/incident.js';
+import type { Incident, Severity, Tier } from '../services/incident.js';
+import { TIERS } from '../services/incident.js';
+import { bindIncidentActions, IncidentActions } from './IncidentActions.js';
 import * as styles from './IncidentBoard.css.js';
-import { useIncidents } from './useIncidents.js';
+import type { UseIncidentsResult } from './useIncidents.js';
 
 const TIER_OPTIONS: ReadonlyArray<Tier> = TIERS;
-const SEVERITY_OPTIONS: ReadonlyArray<Severity> = SEVERITIES;
 
 export interface IncidentBoardProps {
   readonly identity: Identity;
-  readonly subscribe: (topic: string, handler: (payload: unknown) => void) => () => void;
-  /** Injectable for tests; defaults to the real gateway client. */
-  readonly api?: IncidentApi;
+  /** Shared incident data source, lifted to the shell so board and map stay in sync. */
+  readonly incidents: UseIncidentsResult;
 }
 
-export function IncidentBoard({ identity, subscribe, api }: IncidentBoardProps) {
-  const { incidents, loading, error, create, triage, dispatch, arrival, resolve, cancel } =
-    useIncidents({ subscribe, ...(api ? { api } : {}) });
+export function IncidentBoard({ identity, incidents: source }: IncidentBoardProps) {
+  const { incidents, loading, error, create } = source;
 
   return (
     <Stack gap="24">
@@ -51,36 +49,7 @@ export function IncidentBoard({ identity, subscribe, api }: IncidentBoardProps) 
               <IncidentRow
                 key={incident.id}
                 incident={incident}
-                onTriage={(severity) =>
-                  triage(incident.id, {
-                    severity,
-                    expectedVersion: incident.version,
-                    triagedBy: identity.operatorId,
-                  })
-                }
-                onDispatch={(unitIds) =>
-                  dispatch(incident.id, {
-                    unitIds,
-                    expectedVersion: incident.version,
-                    dispatchedBy: identity.operatorId,
-                  })
-                }
-                onArrival={(unitId) =>
-                  arrival(incident.id, { unitId, expectedVersion: incident.version })
-                }
-                onResolve={() =>
-                  resolve(incident.id, {
-                    expectedVersion: incident.version,
-                    resolvedBy: identity.operatorId,
-                  })
-                }
-                onCancel={(reason) =>
-                  cancel(incident.id, {
-                    reason,
-                    expectedVersion: incident.version,
-                    cancelledBy: identity.operatorId,
-                  })
-                }
+                {...bindIncidentActions(source, incident, identity.operatorId)}
               />
             ))
           )}
@@ -191,103 +160,5 @@ function IncidentRow({
         />
       </div>
     </div>
-  );
-}
-
-function IncidentActions({
-  incident,
-  onTriage,
-  onDispatch,
-  onArrival,
-  onResolve,
-  onCancel,
-}: {
-  incident: Incident;
-  onTriage: (severity: Severity) => void;
-  onDispatch: (unitIds: ReadonlyArray<string>) => void;
-  onArrival: (unitId: string) => void;
-  onResolve: () => void;
-  onCancel: (reason: string) => void;
-}) {
-  const dispatched = incident.state === 'dispatched' || incident.state === 'enRoute';
-  const cancellable =
-    incident.state !== 'resolved' && incident.state !== 'cancelled' && incident.state !== 'onScene';
-
-  return (
-    <>
-      {incident.state === 'open' ? (
-        <select
-          className={styles.input}
-          aria-label="triage severity"
-          defaultValue=""
-          onChange={(e) => {
-            const value = e.target.value;
-            if (value) onTriage(value as Severity);
-          }}
-        >
-          <option value="" disabled>
-            triage…
-          </option>
-          {SEVERITY_OPTIONS.map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
-          ))}
-        </select>
-      ) : null}
-
-      {incident.state === 'triaged' ? (
-        <Button
-          intent="primary"
-          size="sm"
-          onClick={() => {
-            const raw = window.prompt('unit ids (comma-separated)');
-            if (!raw) return;
-            const unitIds = raw
-              .split(',')
-              .map((u) => u.trim())
-              .filter(Boolean);
-            if (unitIds.length > 0) onDispatch(unitIds);
-          }}
-        >
-          dispatch
-        </Button>
-      ) : null}
-
-      {dispatched ? (
-        <Button
-          intent="ghost"
-          size="sm"
-          onClick={() => {
-            const unitId = incident.unitIds.find((u) => !incident.unitsOnScene.includes(u));
-            const raw = window.prompt('arriving unit id', unitId ?? '');
-            const trimmed = raw?.trim();
-            if (trimmed) onArrival(trimmed);
-          }}
-        >
-          arrival
-        </Button>
-      ) : null}
-
-      {dispatched || incident.state === 'onScene' ? (
-        <Button intent="ghost" size="sm" onClick={onResolve}>
-          resolve
-        </Button>
-      ) : null}
-
-      {cancellable ? (
-        <Button
-          intent="danger"
-          size="sm"
-          onClick={() => {
-            const reason = window.prompt('cancel reason');
-            const trimmed = reason?.trim();
-            if (trimmed) onCancel(trimmed);
-          }}
-        >
-          cancel
-        </Button>
-      ) : null}
-    </>
   );
 }
