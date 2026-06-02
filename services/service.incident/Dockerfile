@@ -17,7 +17,11 @@ RUN pnpm install --frozen-lockfile
 
 FROM deps AS build
 WORKDIR /app
-RUN pnpm --filter @cad/service.incident build
+# Build this service AND every workspace package it transitively depends on.
+# The trailing '...' is pnpm's "include dependencies" filter. Required because
+# tsup resolves @cad/* via the 'import' export condition (./dist/index.js),
+# which doesn't exist until the shared package is built.
+RUN pnpm --filter "@cad/service.incident..." build
 
 FROM node:20-alpine AS runtime
 RUN apk add --no-cache tini
