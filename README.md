@@ -37,6 +37,11 @@ pnpm dev:docker         # docker compose watch — great on Windows
 Jaeger UI at <http://localhost:16686>. Full comparison and the
 production-like `pnpm stack` are in [docs/development.md](docs/development.md).
 
+Want to actually *use* it? [**docs/playing.md**](docs/playing.md) is a
+hands-on walkthrough: boot the stack, `pnpm seed` some incidents, open the
+operator console at <http://localhost:3000/?operator=alex&tier=fire&name=Alex>,
+and drive an incident through its lifecycle while a second window updates live.
+
 ## Test
 
 ```bash
