@@ -3,8 +3,10 @@ import { createRedisSubscriber } from '@cad/redis';
 import websocket from '@fastify/websocket';
 import Fastify from 'fastify';
 import { createIncidentClient } from './clients/incident.js';
+import { createResourceClient } from './clients/resource.js';
 import { config } from './config.js';
 import { registerIncidentRoutes } from './http/incidents.js';
+import { registerUnitRoutes } from './http/units.js';
 import { makeConnectionHandler } from './ws/connection.js';
 import { createForwarder } from './ws/forwarder.js';
 import { TopicRegistry } from './ws/registry.js';
@@ -28,6 +30,10 @@ app.log.info({ nats: config.NATS_URL, redis: config.REDIS_URL }, 'connected to d
 const incidentClient = createIncidentClient(config.INCIDENT_GRPC_URL);
 registerIncidentRoutes(app, incidentClient);
 app.log.info({ incidentGrpc: config.INCIDENT_GRPC_URL }, 'incident HTTP command path ready');
+
+const resourceClient = createResourceClient(config.RESOURCE_GRPC_URL);
+registerUnitRoutes(app, resourceClient);
+app.log.info({ resourceGrpc: config.RESOURCE_GRPC_URL }, 'units HTTP command path ready');
 
 await app.register(websocket);
 
@@ -59,6 +65,7 @@ async function shutdown(signal: string): Promise<void> {
   try {
     await app.close();
     incidentClient.close();
+    resourceClient.close();
     await nats.drain();
     await redisSub.quit();
   } finally {

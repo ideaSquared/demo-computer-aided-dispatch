@@ -13,6 +13,7 @@ service-gateway:
     NATS_URL: nats://nats:4222
     REDIS_URL: redis://redis:6379
     INCIDENT_GRPC_URL: service-incident:5021
+    RESOURCE_GRPC_URL: service-resource:5041
   depends_on:
       postgres:
         condition: service_healthy

@@ -1,0 +1,102 @@
+// service.resource — event-sourced Unit (responder vehicle) aggregate. State
+// machine per the PRD:
+//
+//   available → dispatched → enRoute → onScene → available
+//                                              ↘ outOfService (from any state)
+//
+// Each RPC has its own Request/Response wrapper so individual methods can
+// grow fields without forcing a v2 (buf STANDARD enforces this). The `Unit`
+// payload lives inside every response. See .claude/skills/event-sourcing.
+
+syntax = "proto3";
+
+package cad.resource.v1;
+
+import "cad/common/v1/geo.proto";
+
+service ResourceService {
+  rpc RegisterUnit(RegisterUnitRequest) returns (RegisterUnitResponse);
+  rpc GetUnit(GetUnitRequest) returns (GetUnitResponse);
+  rpc ListUnits(ListUnitsRequest) returns (ListUnitsResponse);
+  rpc UpdateStatus(UpdateStatusRequest) returns (UpdateStatusResponse);
+}
+
+// ---- requests --------------------------------------------------------------
+
+message RegisterUnitRequest {
+  string callsign = 1;
+  ServiceTier tier = 2;
+  cad.common.v1.GeoPoint location = 3;  // optional — last-known position.
+  string registered_by = 4;  // operatorId stub; Phase-4 auth replaces this.
+}
+
+message GetUnitRequest {
+  string id = 1;
+}
+
+message ListUnitsRequest {
+  // Both filters optional — UNSPECIFIED returns every unit.
+  ServiceTier tier = 1;
+  UnitStatus status = 2;
+}
+
+message UpdateStatusRequest {
+  string id = 1;
+  UnitStatus status = 2;
+  // Set when transitioning to DISPATCHED — the incident the unit is assigned
+  // to. Ignored for other transitions.
+  string incident_id = 3;
+  int64 expected_version = 4;  // optimistic concurrency.
+  string changed_by = 5;
+}
+
+// ---- responses -------------------------------------------------------------
+
+message RegisterUnitResponse {
+  Unit unit = 1;
+}
+
+message GetUnitResponse {
+  Unit unit = 1;
+}
+
+message ListUnitsResponse {
+  repeated Unit units = 1;
+}
+
+message UpdateStatusResponse {
+  Unit unit = 1;
+}
+
+// ---- domain shape ----------------------------------------------------------
+
+message Unit {
+  string id = 1;
+  string callsign = 2;
+  ServiceTier tier = 3;
+  UnitStatus status = 4;
+  // Set while the unit is dispatched/enRoute/onScene; empty when available or
+  // out of service.
+  string incident_id = 5;
+  cad.common.v1.GeoPoint location = 6;  // null when no position is known.
+  string updated_at = 7;  // RFC3339; envelope timestamps stay strings on the wire.
+  int64 version = 8;
+}
+
+// ---- enums -----------------------------------------------------------------
+
+enum ServiceTier {
+  SERVICE_TIER_UNSPECIFIED = 0;
+  SERVICE_TIER_POLICE = 1;
+  SERVICE_TIER_MEDICAL = 2;
+  SERVICE_TIER_FIRE = 3;
+}
+
+enum UnitStatus {
+  UNIT_STATUS_UNSPECIFIED = 0;
+  UNIT_STATUS_AVAILABLE = 1;
+  UNIT_STATUS_DISPATCHED = 2;
+  UNIT_STATUS_EN_ROUTE = 3;
+  UNIT_STATUS_ON_SCENE = 4;
+  UNIT_STATUS_OUT_OF_SERVICE = 5;
+}

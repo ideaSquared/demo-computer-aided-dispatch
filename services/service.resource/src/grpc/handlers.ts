@@ -1,0 +1,291 @@
+import { randomUUID } from 'node:crypto';
+import type { DbClient } from '@cad/db';
+import { withTransaction } from '@cad/db';
+import type { NatsConnection } from '@cad/events';
+import { publish, subjects } from '@cad/events';
+import { UnitRegisteredSchema, UnitStatusChangedSchema } from '@cad/events/resource';
+import { ResourceV1 } from '@cad/proto';
+import * as grpc from '@grpc/grpc-js';
+import {
+  appendAndProject,
+  ConcurrencyError,
+  listUnits,
+  loadEvents,
+  loadView,
+} from '../db/repository.js';
+import {
+  assign,
+  clear,
+  fold,
+  InvariantError,
+  markEnRoute,
+  markOnScene,
+  register,
+  type ServiceTier,
+  takeOutOfService,
+  type UnitEvent,
+  type UnitState,
+} from '../domain/index.js';
+import { fromProtoStatus, fromProtoTier, toProtoUnit } from './projection.js';
+
+interface Deps {
+  db: DbClient;
+  nats: NatsConnection;
+  /** Override for tests. Production uses `Date.now()` + `randomUUID()`. */
+  now?: () => string;
+  newId?: () => string;
+}
+
+/**
+ * Build a `ResourceServiceServer` implementation. Each handler:
+ *
+ *   1. parses + validates the request (rejects empties / UNSPECIFIED enums),
+ *   2. loads the event log, folds it into current state,
+ *   3. runs the command (pure domain) → produces new events,
+ *   4. opens a tx: append events (OCC on PK), upsert read model,
+ *   5. publishes the matching NATS event(s) AFTER commit,
+ *   6. projects the new state into a proto response.
+ *
+ * Errors are mapped on the way out: `InvariantError` → `FAILED_PRECONDITION`,
+ * `ConcurrencyError` → `ABORTED`, anything else → `INTERNAL`. The wire layer
+ * never sees a raw domain error.
+ */
+export function createHandlers(deps: Deps): ResourceV1.ResourceServiceServer {
+  const now = deps.now ?? (() => new Date().toISOString());
+  const newId = deps.newId ?? (() => randomUUID());
+
+  // --- helpers -------------------------------------------------------------
+
+  type Cmd = (state: UnitState | null) => UnitEvent[];
+
+  async function execute(
+    aggregateId: string,
+    command: Cmd,
+  ): Promise<{ newEvents: UnitEvent[]; nextState: UnitState; newVersion: number }> {
+    const { events: history, version: expectedVersion } = await loadEvents(deps.db, aggregateId);
+    const newEvents = command(fold(history));
+    if (newEvents.length === 0) {
+      // Every command in this service emits ≥ 1 event; an empty list would
+      // mean a silent no-op the caller can't distinguish from success.
+      throw new Error(`command produced no events for unit '${aggregateId}'`);
+    }
+    const nextState = fold([...history, ...newEvents]);
+    if (nextState === null) {
+      throw new Error('post-command state is null (impossible)');
+    }
+    const { newVersion } = await withTransaction(deps.db, (tx) =>
+      appendAndProject(tx, { aggregateId, expectedVersion, newEvents, nextState }),
+    );
+    return { newEvents, nextState, newVersion };
+  }
+
+  async function publishAll(
+    aggregateId: string,
+    tier: ServiceTier,
+    startVersion: number,
+    events: UnitEvent[],
+    finalState: UnitState,
+  ): Promise<void> {
+    // Always after commit; an awaited transaction succeeded by the time we
+    // get here. Each event carries its own version so consumers can detect
+    // gaps / out-of-order delivery.
+    for (const [i, event] of events.entries()) {
+      const version = startVersion + i;
+      const envelope = {
+        eventId: newId(),
+        occurredAt: event.occurredAt,
+        idempotencyKey: `unit:${aggregateId}:v${version}`,
+        unitId: aggregateId,
+        tier,
+        version,
+      };
+      if (event.type === 'UnitRegistered') {
+        await publish(deps, subjects.UnitRegistered, UnitRegisteredSchema, {
+          ...envelope,
+          callsign: event.callsign,
+          location: event.location,
+          registeredBy: event.registeredBy,
+        });
+        continue;
+      }
+      // Every non-registration event is a status change. The published status
+      // is the unit's status AFTER applying this event; we recompute it from
+      // the event type rather than threading per-event state through.
+      const statusChange = STATUS_AFTER[event.type];
+      await publish(deps, subjects.UnitStatusChanged, UnitStatusChangedSchema, {
+        ...envelope,
+        status: statusChange,
+        // incidentId is set only while assigned; the final folded state holds
+        // the right value (set on assign, cleared on clear/out-of-service).
+        incidentId: event.type === 'UnitAssigned' ? event.incidentId : finalState.incidentId,
+        changedBy: changedByOf(event),
+      });
+    }
+  }
+
+  function mapError(err: unknown): grpc.ServiceError {
+    if (err instanceof InvariantError) {
+      return Object.assign(new Error(err.message), {
+        code: grpc.status.FAILED_PRECONDITION,
+        details: err.message,
+        metadata: new grpc.Metadata(),
+      });
+    }
+    if (err instanceof ConcurrencyError) {
+      return Object.assign(new Error(err.message), {
+        code: grpc.status.ABORTED,
+        details: err.message,
+        metadata: new grpc.Metadata(),
+      });
+    }
+    const message = err instanceof Error ? err.message : 'internal error';
+    return Object.assign(new Error(message), {
+      code: grpc.status.INTERNAL,
+      details: message,
+      metadata: new grpc.Metadata(),
+    });
+  }
+
+  // --- handlers ------------------------------------------------------------
+
+  return {
+    registerUnit: (call, callback) => {
+      void (async () => {
+        try {
+          const tier = fromProtoTier(call.request.tier);
+          if (!tier) {
+            throw new InvariantError('tier is required');
+          }
+          const id = newId();
+          const { nextState, newEvents, newVersion } = await execute(id, (state) =>
+            register(state, {
+              callsign: call.request.callsign,
+              tier,
+              location: call.request.location
+                ? { lat: call.request.location.lat, lng: call.request.location.lng }
+                : null,
+              registeredBy: call.request.registeredBy || 'unknown',
+              occurredAt: now(),
+            }),
+          );
+          await publishAll(id, tier, newVersion - newEvents.length + 1, newEvents, nextState);
+          callback(null, { unit: toProtoUnit(id, nextState, newVersion) });
+        } catch (err) {
+          callback(mapError(err), null);
+        }
+      })();
+    },
+
+    updateStatus: (call, callback) => {
+      void (async () => {
+        try {
+          const target = fromProtoStatus(call.request.status);
+          if (!target) throw new InvariantError('status is required');
+          const changedBy = call.request.changedBy || 'unknown';
+          const command = commandFor(target, call.request.incidentId, changedBy, now());
+          const { nextState, newEvents, newVersion } = await execute(call.request.id, command);
+          await publishAll(
+            call.request.id,
+            nextState.tier,
+            newVersion - newEvents.length + 1,
+            newEvents,
+            nextState,
+          );
+          callback(null, { unit: toProtoUnit(call.request.id, nextState, newVersion) });
+        } catch (err) {
+          callback(mapError(err), null);
+        }
+      })();
+    },
+
+    getUnit: (call, callback) => {
+      void (async () => {
+        try {
+          const row = await loadView(deps.db, call.request.id);
+          if (!row) {
+            throw Object.assign(new Error(`unit '${call.request.id}' not found`), {
+              code: grpc.status.NOT_FOUND,
+            });
+          }
+          callback(null, { unit: toProtoUnit(row.id, row.state, row.version) });
+        } catch (err) {
+          callback(mapError(err), null);
+        }
+      })();
+    },
+
+    listUnits: (call, callback) => {
+      void (async () => {
+        try {
+          const tier =
+            call.request.tier === ResourceV1.ServiceTier.UNSPECIFIED
+              ? undefined
+              : (fromProtoTier(call.request.tier) ?? undefined);
+          const status =
+            call.request.status === ResourceV1.UnitStatus.UNSPECIFIED
+              ? undefined
+              : (fromProtoStatus(call.request.status) ?? undefined);
+          const rows = await listUnits(deps.db, { tier, status });
+          callback(null, {
+            units: rows.map((r) => toProtoUnit(r.id, r.state, r.version)),
+          });
+        } catch (err) {
+          callback(mapError(err), null);
+        }
+      })();
+    },
+  };
+}
+
+// --- status-change helpers ---------------------------------------------------
+
+/** The unit status produced by applying each non-registration event. */
+const STATUS_AFTER: Record<
+  Exclude<UnitEvent['type'], 'UnitRegistered'>,
+  'available' | 'dispatched' | 'enRoute' | 'onScene' | 'outOfService'
+> = {
+  UnitAssigned: 'dispatched',
+  UnitMarkedEnRoute: 'enRoute',
+  UnitMarkedOnScene: 'onScene',
+  UnitCleared: 'available',
+  UnitTakenOutOfService: 'outOfService',
+};
+
+function changedByOf(event: Exclude<UnitEvent, { type: 'UnitRegistered' }>): string {
+  switch (event.type) {
+    case 'UnitAssigned':
+      return event.assignedBy;
+    case 'UnitCleared':
+      return event.clearedBy;
+    case 'UnitMarkedEnRoute':
+    case 'UnitMarkedOnScene':
+    case 'UnitTakenOutOfService':
+      return event.changedBy;
+  }
+}
+
+/**
+ * Map a requested target status to the command that reaches it. `available`
+ * is reached via `clear`; `outOfService` via `takeOutOfService`; the rest are
+ * the obvious one-step transitions. The pure command enforces transition
+ * legality, so an illegal jump surfaces as an `InvariantError`.
+ */
+function commandFor(
+  target: 'available' | 'dispatched' | 'enRoute' | 'onScene' | 'outOfService',
+  incidentId: string,
+  actor: string,
+  occurredAt: string,
+): (state: UnitState | null) => UnitEvent[] {
+  switch (target) {
+    case 'dispatched':
+      return (state) => assign(state, { incidentId, assignedBy: actor, occurredAt });
+    case 'enRoute':
+      return (state) => markEnRoute(state, { changedBy: actor, occurredAt });
+    case 'onScene':
+      return (state) => markOnScene(state, { changedBy: actor, occurredAt });
+    case 'available':
+      return (state) => clear(state, { clearedBy: actor, occurredAt });
+    case 'outOfService':
+      return (state) => takeOutOfService(state, { changedBy: actor, occurredAt });
+  }
+}

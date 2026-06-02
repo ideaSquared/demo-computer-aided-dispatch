@@ -46,6 +46,7 @@ services:
       <<: *dev-env
       PORT: "5000"
       INCIDENT_GRPC_URL: service-incident:5021
+      RESOURCE_GRPC_URL: service-resource:5041
     develop:
       watch:
         - { action: sync, path: ../services/service.gateway/src, target: /app/services/service.gateway/src }
@@ -104,12 +105,14 @@ services:
   service-resource:
     <<: *dev-build
     command: pnpm --filter @cad/service.resource dev
-    ports: ["5040:5040"]
+    ports: ["5040:5040", "5041:5041"]
     environment:
       <<: *dev-env
       PORT: "5040"
+      GRPC_PORT: "5041"
       DATABASE_URL: postgres://cad:cad@postgres:5432/cad
       DB_SCHEMA: resource
+      MIGRATE_ON_BOOT: "true"
     develop:
       watch:
         - { action: sync, path: ../services/service.resource/src, target: /app/services/service.resource/src }

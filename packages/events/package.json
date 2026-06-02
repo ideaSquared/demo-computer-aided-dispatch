@@ -16,6 +16,11 @@
       "import": "./dist/incident/index.js",
       "default": "./src/incident/index.ts"
     },
+    "./resource": {
+      "types": "./dist/resource/index.d.ts",
+      "import": "./dist/resource/index.js",
+      "default": "./src/resource/index.ts"
+    },
     "./presence": {
       "types": "./dist/presence/index.d.ts",
       "import": "./dist/presence/index.js",

@@ -4,6 +4,7 @@ import Fastify from 'fastify';
 import { config } from './config.js';
 import { subscribeIncidents } from './subscribers/incident.js';
 import { subscribePresence } from './subscribers/presence.js';
+import { subscribeUnits } from './subscribers/resource.js';
 
 const app = Fastify({
   logger: {
@@ -31,6 +32,11 @@ void presenceLoop.catch((err) => {
 const incidentLoop = subscribeIncidents({ nats, redis, log: app.log });
 void incidentLoop.catch((err) => {
   app.log.error({ err }, 'incident subscriber crashed');
+});
+
+const unitLoop = subscribeUnits({ nats, redis, log: app.log });
+void unitLoop.catch((err) => {
+  app.log.error({ err }, 'unit subscriber crashed');
 });
 
 const port = config.PORT;

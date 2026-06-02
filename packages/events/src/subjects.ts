@@ -10,6 +10,8 @@ export const subjects = {
   IncidentUnitArrived: 'incident.unitArrived',
   IncidentResolved: 'incident.resolved',
   IncidentCancelled: 'incident.cancelled',
+  UnitRegistered: 'unit.registered',
+  UnitStatusChanged: 'unit.statusChanged',
   AuditActionTaken: 'audit.actionTaken',
   PresenceChanged: 'presence.changed',
 } as const;

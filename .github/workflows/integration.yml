@@ -15,6 +15,8 @@ on:
       - "tools/scripts/grpc-smoke.ts"
       - "tools/scripts/incident-ws-smoke.ts"
       - "tools/scripts/incident-http-smoke.ts"
+      - "tools/scripts/resource-http-smoke.ts"
+      - "tools/scripts/dispatch-loop-smoke.ts"
       - ".dockerignore"
 
 concurrency:
@@ -75,6 +77,13 @@ jobs:
       # Phase 2 command path: http → gateway → incident gRPC → Postgres.
       - name: Incident HTTP smoke (gateway)
         run: pnpm smoke:incident-http
+      # Phase 3 command path: http → gateway → resource gRPC → Postgres.
+      - name: Resource HTTP smoke (gateway)
+        run: pnpm smoke:resource-http
+      # Phase 3 reaction loop: dispatch an incident to a registered unit and
+      # assert the unit flips to 'dispatched' via the NATS subscriber.
+      - name: Dispatch→unit-status loop smoke
+        run: pnpm smoke:dispatch-loop
       - name: Dump container logs on failure
         if: failure()
         run: |
@@ -154,6 +163,13 @@ jobs:
       # Phase 2 command path: http → gateway → incident gRPC → Postgres.
       - name: Incident HTTP smoke (gateway)
         run: pnpm smoke:incident-http
+      # Phase 3 command path: http → gateway → resource gRPC → Postgres.
+      - name: Resource HTTP smoke (gateway)
+        run: pnpm smoke:resource-http
+      # Phase 3 reaction loop: dispatch an incident to a registered unit and
+      # assert the unit flips to 'dispatched' via the NATS subscriber.
+      - name: Dispatch→unit-status loop smoke
+        run: pnpm smoke:dispatch-loop
       - name: Dump container logs on failure
         if: failure()
         run: |
