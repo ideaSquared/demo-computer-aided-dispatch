@@ -76,7 +76,7 @@ jobs:
           echo "repo=$repo" >> "$GITHUB_OUTPUT"
           echo "target=$target" >> "$GITHUB_OUTPUT"
       - name: Build (and push on main)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ${{ matrix.target }}/Dockerfile
