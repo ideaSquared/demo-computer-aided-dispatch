@@ -218,17 +218,24 @@ async function main(): Promise<void> {
     const got = await req<{ recommendations: Recommendation[] }>(
       GATEWAY_BASE,
       'GET',
-      `/api/incidents/${incidentId}/recommended-units?limit=2`,
+      // Bump the limit so prior smokes' fire units (lifecycle / recommend
+      // leave AVAILABLE units in the geo index) don't push our `far` out
+      // of the result page. We then assert on the relative ordering of
+      // our two units, not absolute top-K position.
+      `/api/incidents/${incidentId}/recommended-units?limit=50`,
       undefined,
       token,
     );
     const recs = got.status === 200 ? got.json.recommendations : [];
     const ids = recs.map((r) => r.unit.id);
     if (got.status === 200 && ids.includes(near.id) && ids.includes(far.id)) {
-      // 5. Assert ordering + realistic distances.
-      const first = recs[0];
-      if (!first || first.unit.id !== near.id) {
-        throw new Error(`expected near unit ${near.id} first, got order [${ids.join(', ')}]`);
+      // 5. Assert relative ordering (near before far) + realistic distances.
+      const nearIdx = ids.indexOf(near.id);
+      const farIdx = ids.indexOf(far.id);
+      if (nearIdx >= farIdx) {
+        throw new Error(
+          `expected near ${near.id} (idx ${nearIdx}) before far ${far.id} (idx ${farIdx}); order [${ids.join(', ')}]`,
+        );
       }
       const nearDist = recs.find((r) => r.unit.id === near.id)?.distanceMeters ?? Number.NaN;
       const farDist = recs.find((r) => r.unit.id === far.id)?.distanceMeters ?? Number.NaN;
