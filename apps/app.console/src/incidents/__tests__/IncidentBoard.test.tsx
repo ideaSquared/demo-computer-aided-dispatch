@@ -15,12 +15,16 @@ const noopSubscribe = () => () => undefined;
 /**
  * The shell owns the incident + fleet data sources and passes them down, so
  * mount the board through the real `useIncidents`/`useFleet` hooks wired to
- * mock apis — exercising the same path production uses.
+ * mock apis — exercising the same path production uses. The same `api` is
+ * threaded as `incidentApi` so the dispatch picker's recommender call hits
+ * the mock too.
  */
 function Board({ api, unitApi }: { api: IncidentApi; unitApi?: UnitApi }) {
   const incidents = useIncidents({ subscribe: noopSubscribe, api });
   const fleet = useFleet({ subscribe: noopSubscribe, api: unitApi ?? makeUnitApi() });
-  return <IncidentBoard identity={identity} incidents={incidents} fleet={fleet} />;
+  return (
+    <IncidentBoard identity={identity} incidents={incidents} fleet={fleet} incidentApi={api} />
+  );
 }
 
 function makeIncident(over: Partial<Incident> = {}): Incident {
@@ -50,6 +54,11 @@ function makeApi(over: Partial<IncidentApi> = {}): IncidentApi {
     arrival: vi.fn(async () => makeIncident()),
     resolve: vi.fn(async () => makeIncident()),
     cancel: vi.fn(async () => makeIncident()),
+    // Default to a rejecting recommender so existing tests exercise the
+    // alphabetical fallback path; nearest-first cases override per-test.
+    recommendUnits: vi.fn(async () => {
+      throw new Error('not implemented');
+    }),
     ...over,
   };
 }
@@ -195,5 +204,123 @@ describe('IncidentBoard', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'dispatch' }));
 
     expect(await screen.findByText(/no available units/i)).toBeInTheDocument();
+  });
+
+  it('orders the dispatch picker by the recommender (nearest first), not alphabetical', async () => {
+    // The fleet returns the units sorted by callsign ("Engine 7" before
+    // "Engine 9"); the recommender returns the *farther* unit first, then
+    // closer — we use the recommender's order verbatim.
+    const api = makeApi({
+      list: vi.fn(async () => [makeIncident({ state: 'triaged', severity: 'high', version: 2 })]),
+      recommendUnits: vi.fn(async () => [
+        {
+          unit: {
+            id: 'u9',
+            callsign: 'Engine 9',
+            tier: 'fire' as const,
+            status: 'available' as const,
+            location: null,
+          },
+          distanceMeters: 420,
+        },
+        {
+          unit: {
+            id: 'u7',
+            callsign: 'Engine 7',
+            tier: 'fire' as const,
+            status: 'available' as const,
+            location: null,
+          },
+          distanceMeters: 1400,
+        },
+      ]),
+    });
+    const unitApi = makeUnitApi({
+      list: vi.fn(async () => [
+        makeUnit({ id: 'u7', callsign: 'Engine 7', tier: 'fire', status: 'available' }),
+        makeUnit({ id: 'u9', callsign: 'Engine 9', tier: 'fire', status: 'available' }),
+      ]),
+    });
+    render(<Board api={api} unitApi={unitApi} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'dispatch' }));
+
+    // The recommender resolves asynchronously; the picker initially renders in
+    // the alphabetical fallback order, then re-orders once recommendations
+    // arrive. Wait for the recommender order to settle.
+    await waitFor(() => {
+      const callsigns = screen.getAllByText(/Engine \d/);
+      expect(callsigns.map((n) => n.textContent)).toEqual(['Engine 9', 'Engine 7']);
+    });
+
+    // Distances are surfaced as hints (rounded sensibly).
+    expect(screen.getByText('420 m')).toBeInTheDocument();
+    expect(screen.getByText('1.4 km')).toBeInTheDocument();
+    expect(api.recommendUnits).toHaveBeenCalledWith('i1');
+  });
+
+  it('falls back to alphabetical ordering when the recommender rejects', async () => {
+    const api = makeApi({
+      list: vi.fn(async () => [makeIncident({ state: 'triaged', severity: 'high', version: 2 })]),
+      recommendUnits: vi.fn(async () => {
+        throw new Error('boom');
+      }),
+    });
+    const unitApi = makeUnitApi({
+      list: vi.fn(async () => [
+        // Intentionally insert non-alphabetical so we can prove the fallback
+        // sorts by callsign rather than echoing list order.
+        makeUnit({ id: 'u9', callsign: 'Engine 9', tier: 'fire', status: 'available' }),
+        makeUnit({ id: 'u7', callsign: 'Engine 7', tier: 'fire', status: 'available' }),
+      ]),
+    });
+    render(<Board api={api} unitApi={unitApi} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'dispatch' }));
+
+    const callsigns = await screen.findAllByText(/Engine \d/);
+    expect(callsigns.map((n) => n.textContent)).toEqual(['Engine 7', 'Engine 9']);
+  });
+
+  it('drops a recommended unit that is no longer available in the live fleet', async () => {
+    // Recommender says Engine 9 is nearest, but the live fleet shows it as
+    // dispatched (someone else grabbed it) — it must not appear in the picker.
+    const api = makeApi({
+      list: vi.fn(async () => [makeIncident({ state: 'triaged', severity: 'high', version: 2 })]),
+      recommendUnits: vi.fn(async () => [
+        {
+          unit: {
+            id: 'u9',
+            callsign: 'Engine 9',
+            tier: 'fire' as const,
+            status: 'available' as const,
+            location: null,
+          },
+          distanceMeters: 420,
+        },
+        {
+          unit: {
+            id: 'u7',
+            callsign: 'Engine 7',
+            tier: 'fire' as const,
+            status: 'available' as const,
+            location: null,
+          },
+          distanceMeters: 1400,
+        },
+      ]),
+    });
+    const unitApi = makeUnitApi({
+      list: vi.fn(async () => [
+        makeUnit({ id: 'u9', callsign: 'Engine 9', tier: 'fire', status: 'dispatched' }),
+        makeUnit({ id: 'u7', callsign: 'Engine 7', tier: 'fire', status: 'available' }),
+      ]),
+    });
+    render(<Board api={api} unitApi={unitApi} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'dispatch' }));
+
+    expect(await screen.findByText('Engine 7')).toBeInTheDocument();
+    expect(screen.queryByText('Engine 9')).not.toBeInTheDocument();
   });
 });

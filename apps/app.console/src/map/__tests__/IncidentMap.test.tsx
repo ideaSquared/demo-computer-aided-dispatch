@@ -37,6 +37,7 @@ function makeApi(over: Partial<IncidentApi> = {}): IncidentApi {
     arrival: vi.fn(async () => makeIncident()),
     resolve: vi.fn(async () => makeIncident()),
     cancel: vi.fn(async () => makeIncident()),
+    recommendUnits: vi.fn(async () => []),
     ...over,
   };
 }

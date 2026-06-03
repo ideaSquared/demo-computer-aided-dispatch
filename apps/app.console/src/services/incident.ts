@@ -48,6 +48,30 @@ export type Incident = z.infer<typeof IncidentSchema>;
 const IncidentEnvelopeSchema = z.object({ incident: IncidentSchema });
 const IncidentListEnvelopeSchema = z.object({ incidents: z.array(IncidentSchema) });
 
+/**
+ * Stripped unit shape the dispatch recommender returns — no `incidentId`,
+ * `updatedAt` or `version` (the recommender ranks; it doesn't author state).
+ * Kept separate from the full `Unit` schema so we don't paper over the wire.
+ */
+const RecommendedUnitSchema = z.object({
+  id: z.string(),
+  callsign: z.string(),
+  tier: z.enum(TIERS),
+  status: z.enum(['available', 'dispatched', 'enRoute', 'onScene', 'outOfService']),
+  location: LocationSchema.nullable(),
+});
+export type RecommendedUnit = z.infer<typeof RecommendedUnitSchema>;
+
+const RecommendationSchema = z.object({
+  unit: RecommendedUnitSchema,
+  distanceMeters: z.number(),
+});
+export type Recommendation = z.infer<typeof RecommendationSchema>;
+
+const RecommendUnitsEnvelopeSchema = z.object({
+  recommendations: z.array(RecommendationSchema),
+});
+
 const ErrorEnvelopeSchema = z.object({
   error: z.object({ code: z.string(), message: z.string() }),
 });
@@ -101,6 +125,10 @@ export interface CancelInput {
 
 export interface ListIncidentsParams {
   readonly tier?: Tier;
+  readonly limit?: number;
+}
+
+export interface RecommendUnitsParams {
   readonly limit?: number;
 }
 
@@ -199,6 +227,20 @@ export const incidentApi = {
       IncidentEnvelopeSchema,
     );
     return incident;
+  },
+
+  recommendUnits: async (
+    id: string,
+    params: RecommendUnitsParams = {},
+  ): Promise<ReadonlyArray<Recommendation>> => {
+    const query = new URLSearchParams();
+    if (params.limit !== undefined) query.set('limit', String(params.limit));
+    const qs = query.toString();
+    const { recommendations } = await request(
+      `/api/incidents/${encodeURIComponent(id)}/recommended-units${qs ? `?${qs}` : ''}`,
+      RecommendUnitsEnvelopeSchema,
+    );
+    return recommendations;
   },
 };
 

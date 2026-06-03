@@ -2,7 +2,7 @@ import { Button, Stack } from '@cad/lib.ui';
 import { type FormEvent, useState } from 'react';
 import type { UseFleetResult } from '../fleet/useFleet.js';
 import type { Identity } from '../presence/identity.js';
-import type { Incident, Severity, Tier } from '../services/incident.js';
+import type { Incident, IncidentApi, Severity, Tier } from '../services/incident.js';
 import { TIERS } from '../services/incident.js';
 import type { Unit } from '../services/units.js';
 import { bindIncidentActions, IncidentActions } from './IncidentActions.js';
@@ -17,9 +17,20 @@ export interface IncidentBoardProps {
   readonly incidents: UseIncidentsResult;
   /** Shared fleet roster, lifted to the shell so the dispatch picker lists live units. */
   readonly fleet: UseFleetResult;
+  /**
+   * Optional incident HTTP client. Forwarded to the dispatch picker so it can
+   * call the recommender for nearest-first ordering. Production callers omit
+   * this (defaults to the singleton); tests inject a mock.
+   */
+  readonly incidentApi?: IncidentApi | undefined;
 }
 
-export function IncidentBoard({ identity, incidents: source, fleet }: IncidentBoardProps) {
+export function IncidentBoard({
+  identity,
+  incidents: source,
+  fleet,
+  incidentApi,
+}: IncidentBoardProps) {
   const { incidents, loading, error, create } = source;
   const { units } = fleet;
 
@@ -55,6 +66,7 @@ export function IncidentBoard({ identity, incidents: source, fleet }: IncidentBo
                 key={incident.id}
                 incident={incident}
                 units={units}
+                incidentApi={incidentApi}
                 {...bindIncidentActions(source, incident, identity.operatorId)}
               />
             ))
@@ -131,6 +143,7 @@ function IncidentRow({
   onArrival,
   onResolve,
   onCancel,
+  incidentApi,
 }: {
   incident: Incident;
   units: ReadonlyArray<Unit>;
@@ -139,6 +152,7 @@ function IncidentRow({
   onArrival: (unitId: string) => void;
   onResolve: () => void;
   onCancel: (reason: string) => void;
+  incidentApi?: IncidentApi | undefined;
 }) {
   return (
     <div className={styles.row}>
@@ -166,6 +180,7 @@ function IncidentRow({
           onArrival={onArrival}
           onResolve={onResolve}
           onCancel={onCancel}
+          incidentApi={incidentApi}
         />
       </div>
     </div>
