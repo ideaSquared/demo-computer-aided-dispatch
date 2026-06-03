@@ -16,9 +16,6 @@ syntax = "proto3";
 
 package cad.audit.v1;
 
-import "cad/common/v1/health.proto";
-import "google/protobuf/empty.proto";
-
 service AuditQueryService {
   // Filtered keyset-paginated query. Every filter is optional; the empty
   // request returns the most recent `limit` events globally (capped). The
@@ -31,10 +28,8 @@ service AuditQueryService {
   // session). Ordered oldest → newest so the caller can render a timeline
   // without reversing.
   rpc GetByTarget(GetByTargetRequest) returns (GetByTargetResponse);
-
-  // Mirrors the gRPC standard health probe — every CAD gRPC service
-  // surfaces one for grpcurl-style readiness checks.
-  rpc Health(google.protobuf.Empty) returns (cad.common.v1.CheckResponse);
+  // Readiness checks go through the dedicated `cad.common.v1.HealthService`
+  // and the HTTP `/health` endpoint — no per-service Health RPC.
 }
 
 // ---- requests --------------------------------------------------------------

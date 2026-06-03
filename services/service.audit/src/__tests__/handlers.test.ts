@@ -7,7 +7,7 @@ import type {
 } from '@cad/proto';
 import { AuditV1 } from '@cad/proto';
 import * as grpc from '@grpc/grpc-js';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import type { AuditRow } from '../db/repository.js';
 import { createHandlers } from '../grpc/handlers.js';
 
@@ -187,18 +187,5 @@ describe('GetByTarget', () => {
       limit: 0,
     });
     expect(e2?.code).toBe(grpc.status.INVALID_ARGUMENT);
-  });
-});
-
-describe('Health', () => {
-  it('returns SERVING', async () => {
-    const handlers = createHandlers({ db: fakeDb([]) });
-    const cb = vi.fn();
-    handlers.health(
-      // The handler ignores call.request for Empty.
-      {} as unknown as Parameters<typeof handlers.health>[0],
-      cb,
-    );
-    expect(cb).toHaveBeenCalledWith(null, expect.objectContaining({ status: expect.any(Number) }));
   });
 });
