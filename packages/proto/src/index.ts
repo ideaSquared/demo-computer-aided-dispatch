@@ -89,6 +89,16 @@ export type {
   UpdateStatusResponse,
 } from '../gen/ts/cad/resource/v1/resource.js';
 export * as ResourceV1 from '../gen/ts/cad/resource/v1/resource.js';
+// service.triage — Phase 5 PR 3a. `TriageRequest` collides with the existing
+// `cad.incident.v1.TriageRequest` (the incident.triage state-transition
+// request) at the flat surface, so we re-export it as `ClassifyRequest` to
+// keep the contract namespace clean for callers. `TriageSuggestion` is
+// unambiguous and re-exports straight through.
+export type {
+  TriageRequest as ClassifyRequest,
+  TriageSuggestion,
+} from '../gen/ts/cad/triage/v1/triage.js';
+export * as TriageV1 from '../gen/ts/cad/triage/v1/triage.js';
 
 // Hand-rolled health constants kept for any callers still using the v0
 // scaffold from before codegen landed. New code should use

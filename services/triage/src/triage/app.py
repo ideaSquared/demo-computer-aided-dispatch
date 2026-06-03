@@ -1,8 +1,9 @@
-"""FastAPI app. /health is real; /classify returns a hard-coded stub.
+"""FastAPI app. /health is real; /classify proxies the stub classifier.
 
-The stub stays until PR 4 wires the Ollama client. Boot-proof is the
-contract for PR 3: the service has to come up under docker compose and
-respond to /health so `pnpm smoke` is green.
+PR 3a's classifier is hard-coded — see `triage.classify`. PR 3b plumbs the
+Ollama call into the same function. The HTTP `/classify` route stays for
+local-dev convenience; the cross-service contract is gRPC — see
+`triage.server.TriageServicer.Classify`.
 """
 
 from __future__ import annotations
@@ -10,6 +11,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 
 from triage import __version__
+from triage.classify import classify as classify_stub
 from triage.config import config
 from triage.models import TriageRequest, TriageSuggestion
 
@@ -27,17 +29,10 @@ def health() -> dict[str, str]:
 
 @app.post("/classify", response_model=TriageSuggestion)
 def classify(req: TriageRequest) -> TriageSuggestion:
-    """Stub — wire the Ollama call in PR 4."""
-
-    return TriageSuggestion(
-        severity="medium",
-        confidence=0.5,
-        rationale=(
-            "Stub response. The real classifier is wired in PR 4; until then "
-            f"every request returns medium/0.5 against tier={req.tier}."
-        ),
-        model_version=f"stub@{__version__}",
-    )
+    """Stub — wire the Ollama call in PR 3b. The cross-service contract is
+    `cad.triage.v1.TriageService.Classify` (gRPC); this HTTP route mirrors
+    it for local-dev curl/probe convenience."""
+    return classify_stub(req)
 
 
 __all__ = ["app", "config"]

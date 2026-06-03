@@ -1,0 +1,61 @@
+// service.triage — AI severity classification via a local LLM. Phase 5 PR
+// 3a introduces the Classify RPC against a hard-coded stub; PR 3b wires the
+// Ollama call behind the same contract. The proto is the load-bearing seam:
+// once Classify exists across proto + Python + gateway, swapping the impl is
+// one file.
+//
+// `Severity` and `ServiceTier` are defined LOCALLY rather than imported from
+// cad.incident.v1 / cad.common.v1 — same self-contained convention every
+// other service follows (see cad.geo.v1). The Python service translates
+// these enums into its pydantic wire-string form on the way out.
+//
+// Each RPC has its own Request/Response wrapper so individual methods can
+// grow fields without forcing a v2 (buf STANDARD enforces this).
+
+syntax = "proto3";
+
+package cad.triage.v1;
+
+service TriageService {
+  // Hard-coded stub in PR 3a (returns medium/0.5/stub/stub-0.0.0); PR 3b
+  // wires the Ollama call behind the same surface.
+  rpc Classify(TriageRequest) returns (TriageSuggestion);
+}
+
+// ---- requests --------------------------------------------------------------
+
+message TriageRequest {
+  string incident_id = 1;
+  string notes = 2;
+  // Intake fields the call handler captured (caller, location, etc).
+  // Free-form string→string map; the classifier decides which keys it cares
+  // about and the structured-output schema in 3b pins what comes back.
+  map<string, string> structured_fields = 3;
+  ServiceTier tier = 4;
+}
+
+// ---- responses -------------------------------------------------------------
+
+message TriageSuggestion {
+  Severity severity = 1;
+  double confidence = 2;        // 0..1
+  string rationale = 3;         // model-generated short text; empty for the stub.
+  string model_version = 4;     // semver-ish; "stub-0.0.0" for PR 3a.
+}
+
+// ---- enums -----------------------------------------------------------------
+
+enum Severity {
+  SEVERITY_UNSPECIFIED = 0;
+  SEVERITY_LOW = 1;
+  SEVERITY_MEDIUM = 2;
+  SEVERITY_HIGH = 3;
+  SEVERITY_CRITICAL = 4;
+}
+
+enum ServiceTier {
+  SERVICE_TIER_UNSPECIFIED = 0;
+  SERVICE_TIER_POLICE = 1;
+  SERVICE_TIER_MEDICAL = 2;
+  SERVICE_TIER_FIRE = 3;
+}
