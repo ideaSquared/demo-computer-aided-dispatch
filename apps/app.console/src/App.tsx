@@ -1,44 +1,50 @@
-import { Stack } from '@cad/lib.ui';
+import { Button, Stack } from '@cad/lib.ui';
 import { useMemo, useState } from 'react';
 import * as styles from './App.css.js';
+import { AuthProvider, useAuth } from './auth/AuthProvider.js';
+import { LoginPage } from './auth/LoginPage.js';
+import type { Session } from './auth/session.js';
 import { FleetPanel } from './fleet/FleetPanel.js';
 import { useFleet } from './fleet/useFleet.js';
 import { IncidentBoard } from './incidents/IncidentBoard.js';
 import { useIncidents } from './incidents/useIncidents.js';
 import { IncidentMap } from './map/IncidentMap.js';
-import { type Identity, readIdentity, wsUrlFor } from './presence/identity.js';
+import { type Identity, identityFromSession, wsUrlFor } from './presence/identity.js';
 import { PresenceView } from './presence/PresencePage.js';
 import { useWs } from './ws/useWs.js';
 
 type Tab = 'incidents' | 'map' | 'fleet' | 'presence';
 
 export function App() {
-  const identity = useMemo(
-    () => readIdentity(typeof window !== 'undefined' ? window.location.search : ''),
-    [],
+  return (
+    <AuthProvider>
+      <Gate />
+    </AuthProvider>
   );
+}
 
-  if (!identity.operatorId) {
+function Gate() {
+  const { session, hydrating } = useAuth();
+  if (hydrating) {
     return (
       <main className={styles.shell}>
         <Stack gap="16" align="start">
           <h1 className={styles.heading}>operator console</h1>
-          <p>
-            Identity stub for Phase 1: open with <code>?operator=alex&tier=police&name=Alex</code>{' '}
-            in the URL. Authentication lands in Phase 4.
-          </p>
+          <p className={styles.identityText}>restoring session…</p>
         </Stack>
       </main>
     );
   }
-
-  return <ConsoleShell identity={identity} />;
+  if (!session) return <LoginPage />;
+  return <ConsoleShell session={session} />;
 }
 
-function ConsoleShell({ identity }: { identity: Identity }) {
-  const url = useMemo(() => wsUrlFor(identity), [identity]);
+function ConsoleShell({ session }: { session: Session }) {
+  const identity = useMemo(() => identityFromSession(session), [session]);
+  const url = useMemo(() => wsUrlFor(session.accessToken), [session.accessToken]);
   const { status, subscribe, send } = useWs({ url });
   const [tab, setTab] = useState<Tab>('incidents');
+  const { logout, switchOperator } = useAuth();
 
   // One incident data source for the whole shell: the board and the map share
   // this instance (and the single WS connection above), so they reconcile in
@@ -57,10 +63,30 @@ function ConsoleShell({ identity }: { identity: Identity }) {
             <h1 className={styles.heading}>operator console</h1>
             <div className={styles.identityText}>
               {identity.displayName} · <span className={styles.tierLabel}>{identity.tier}</span> ·{' '}
-              {identity.operatorId}
+              {session.operator.roles.join(', ') || 'no roles'} · {session.operator.email}
             </div>
           </div>
-          <span className={styles.connection({ state: status })}>{status}</span>
+          <div className={styles.identityActions}>
+            <span className={styles.connection({ state: status })}>{status}</span>
+            <Button
+              size="sm"
+              intent="ghost"
+              onClick={() => {
+                switchOperator();
+              }}
+            >
+              switch operator
+            </Button>
+            <Button
+              size="sm"
+              intent="ghost"
+              onClick={() => {
+                void logout();
+              }}
+            >
+              sign out
+            </Button>
+          </div>
         </div>
 
         <div className={styles.tabs} role="tablist">
@@ -115,3 +141,7 @@ function ConsoleShell({ identity }: { identity: Identity }) {
     </main>
   );
 }
+
+// Keep the type re-exported so consumers (board, map, fleet) continue to
+// pull `Identity` from where they always did.
+export type { Identity };

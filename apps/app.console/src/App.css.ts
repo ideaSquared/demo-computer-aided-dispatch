@@ -19,6 +19,12 @@ export const identityBar = style({
   borderRadius: vars.radii.md,
 });
 
+export const identityActions = style({
+  display: 'flex',
+  alignItems: 'center',
+  gap: vars.spacing['8'],
+});
+
 export const identityText = style({
   color: vars.colors.text.subtle,
   font: vars.typography.mono,

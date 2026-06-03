@@ -7,6 +7,7 @@ import { createDispatchClient } from './clients/dispatch.js';
 import { createIncidentClient } from './clients/incident.js';
 import { createResourceClient } from './clients/resource.js';
 import { config } from './config.js';
+import { registerAuthRoutes } from './http/auth.js';
 import { registerDispatchRoutes } from './http/dispatch.js';
 import type { GateDeps } from './http/gate.js';
 import { registerIncidentRoutes } from './http/incidents.js';
@@ -44,6 +45,12 @@ if (config.DEV_AUTH_BYPASS) {
   );
 }
 app.log.info({ authGrpc: config.AUTH_GRPC_URL }, 'auth client ready');
+
+// Browser-facing auth proxy: login/refresh/me/logout + the dev role
+// switcher's seeded-operators listing. Mounted unconditionally; the auth
+// service gates the seeded list on DEV_MODE itself.
+registerAuthRoutes(app, authClient);
+app.log.info('auth HTTP routes ready');
 
 // The gRPC client is lazy/channel-based — no await; the channel connects on
 // first RPC. Registering the HTTP command path that proxies to it.

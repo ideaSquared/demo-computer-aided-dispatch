@@ -107,6 +107,11 @@ jobs:
       # cross-tier, and an observer can list but not triage.
       - name: Enforcement smoke (gateway CASL gate)
         run: pnpm smoke:enforce
+      # The console's login flow lives behind the gateway's auth proxy.
+      # Drives the same surface the browser uses: seeded list → login →
+      # /me → refresh → logout → 401-after-revoke.
+      - name: Dev-login smoke (gateway auth proxy)
+        run: pnpm smoke:dev-login
       - name: Dump container logs on failure
         if: failure()
         run: |
@@ -210,6 +215,11 @@ jobs:
       # Phase 4 enforcement: dispatch gate, tier scope, observer read-only.
       - name: Enforcement smoke (gateway CASL gate)
         run: pnpm smoke:enforce
+      # The console's login flow lives behind the gateway's auth proxy.
+      # Drives the same surface the browser uses: seeded list → login →
+      # /me → refresh → logout → 401-after-revoke.
+      - name: Dev-login smoke (gateway auth proxy)
+        run: pnpm smoke:dev-login
       - name: Dump container logs on failure
         if: failure()
         run: |
