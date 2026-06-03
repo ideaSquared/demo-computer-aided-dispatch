@@ -3,7 +3,7 @@
  * Phase-5 geo smoke. Proves the PostGIS-backed NearestK seam works
  * end-to-end:
  *
- *   1. Login as dispatch.fire@cad.local (dispatcher; can manage units).
+ *   1. Login as sup.fire@cad.local (supervisor; can manageFleet + dispatch).
  *   2. Register two fire units at known coords — a near one at London
  *      centre, a far one ~5km north-east.
  *   3. Open a fire incident next to London centre, triage it so the
@@ -113,11 +113,15 @@ async function login(): Promise<string> {
     'POST',
     '/dev/operators',
     {
-      email: 'dispatch.fire@cad.local',
+      // `manageFleet Unit` (the action for register/update) requires
+      // `supervisor`+ per @cad/lib.authz; dispatcher can only update an
+      // existing unit's status. Use the supervisor persona so the smoke
+      // can drive the registration round-trip end-to-end.
+      email: 'sup.fire@cad.local',
       password: 'dev',
-      displayName: 'Fire Dispatcher',
+      displayName: 'Fire Supervisor',
       tier: 'fire',
-      roles: ['dispatcher'],
+      roles: ['supervisor'],
     },
     null,
   );
@@ -125,7 +129,7 @@ async function login(): Promise<string> {
     AUTH_BASE,
     'POST',
     '/dev/login',
-    { email: 'dispatch.fire@cad.local', password: 'dev' },
+    { email: 'sup.fire@cad.local', password: 'dev' },
     null,
   );
   if (res.status !== 200) {
