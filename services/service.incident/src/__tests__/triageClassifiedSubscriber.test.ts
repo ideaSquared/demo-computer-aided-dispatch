@@ -56,8 +56,12 @@ function resetCaptured(): void {
 }
 
 interface FakeLogger {
-  info: ReturnType<typeof vi.fn>;
-  error: ReturnType<typeof vi.fn>;
+  // Match the structural shape `subscribeTriageClassified` expects from its
+  // `deps.log` so TS accepts the fake at the call site. We still wrap the
+  // values with `vi.fn()` at construction time and read assertions via
+  // `vi.mocked(log.info)` rather than tightening the type.
+  info: (o: unknown, m?: string) => void;
+  error: (o: unknown, m?: string) => void;
 }
 
 function fakeLogger(): FakeLogger {
@@ -155,7 +159,7 @@ describe('subscribeTriageClassified', () => {
     await capturedHandler?.(makeClassified());
 
     expect(publishedEvents).toEqual([]);
-    expect(log.info).toHaveBeenCalledWith(
+    expect(vi.mocked(log.info)).toHaveBeenCalledWith(
       { incidentId: INCIDENT_ID },
       'skip triage suggestion: unknown incident',
     );
@@ -173,7 +177,7 @@ describe('subscribeTriageClassified', () => {
 
     expect(vi.mocked(upsertAiSuggestion)).not.toHaveBeenCalled();
     expect(publishedEvents).toEqual([]);
-    expect(log.info).toHaveBeenCalledWith(
+    expect(vi.mocked(log.info)).toHaveBeenCalledWith(
       { incidentId: INCIDENT_ID },
       'skip triage suggestion: unspecified',
     );
