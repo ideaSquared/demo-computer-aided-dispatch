@@ -29,7 +29,7 @@ except ImportError:  # pragma: no cover — covered by the container build.
     triage_pb2 = None  # type: ignore[assignment]
     triage_pb2_grpc = None  # type: ignore[assignment]
 
-from triage.classify import classify as classify_stub
+from triage.classify import classify as classify_fn
 from triage.models import ServiceTier, TriageRequest
 
 log = logging.getLogger("triage.server")
@@ -59,6 +59,7 @@ def _init_enum_tables() -> None:
 
 
 _SEVERITY_TO_PROTO_NAME: dict[str, str] = {
+    "unspecified": "SEVERITY_UNSPECIFIED",
     "low": "SEVERITY_LOW",
     "medium": "SEVERITY_MEDIUM",
     "high": "SEVERITY_HIGH",
@@ -79,8 +80,9 @@ def _make_servicer():  # noqa: ANN202 — return type is the generated class.
     _init_enum_tables()
 
     class TriageServicer(triage_pb2_grpc.TriageServiceServicer):
-        """Stub: hands every request to `classify_stub` and returns the
-        canned suggestion. PR 3b swaps in the Ollama-backed classifier."""
+        """Hands every request to `classify()` and translates the resulting
+        pydantic suggestion back to the proto enum. PR 3b runs the real
+        Ollama-backed classifier; PR 3a used a hard-coded stub."""
 
         def Classify(  # noqa: N802 — gRPC method names are PascalCase.
             self,
@@ -101,7 +103,7 @@ def _make_servicer():  # noqa: ANN202 — return type is the generated class.
                 structured_fields=dict(request.structured_fields),
                 tier=tier_wire,
             )
-            suggestion = classify_stub(req)
+            suggestion = classify_fn(req)
 
             severity_name = _SEVERITY_TO_PROTO_NAME[suggestion.severity]
             return triage_pb2.ClassifyResponse(
