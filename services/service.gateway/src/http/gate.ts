@@ -82,8 +82,17 @@ export async function requireAbility(
       .send({ error: { code: 'UNAUTHENTICATED', message: 'missing or invalid access token' } });
     return null;
   }
-  const subjectInstance = caslSubject(sub.kind, stripKind(sub));
-  if (!session.ability.can(action, subjectInstance)) {
+  // Build the CASL check target. With at least one condition field (e.g.
+  // `tier`) we hand CASL a tagged `subject('Incident', { tier })` instance
+  // so condition-bearing rules can evaluate. With NO condition fields
+  // (`{kind:'Incident'}` from an unscoped list) we MUST pass the bare type
+  // name: a `subject('Incident', {})` tagged instance has `tier=undefined`
+  // and CASL evaluates condition rules like `{tier:'police'}` against that
+  // as a miss, 403-ing tier-scoped roles. The bare-string form is CASL's
+  // "any rule for this type" check, which is exactly what unscoped means.
+  const conditions = stripKind(sub);
+  const subjectArg = hasConditions(conditions) ? caslSubject(sub.kind, conditions) : sub.kind;
+  if (!session.ability.can(action, subjectArg)) {
     // Audit the deny (best-effort) BEFORE replying so we don't lose it if
     // the connection drops on the client.
     await emitAudit(deps, session, action, sub, 'denied').catch((err) => {
@@ -132,6 +141,13 @@ export async function emitAudit(
 function stripKind(sub: GateSubject): Record<string, unknown> {
   const { kind: _kind, ...rest } = sub;
   return rest;
+}
+
+function hasConditions(conditions: Record<string, unknown>): boolean {
+  for (const key of Object.keys(conditions)) {
+    if (conditions[key] !== undefined) return true;
+  }
+  return false;
 }
 
 function actionDottedFor(kind: 'Incident' | 'Unit', action: Action): string {
