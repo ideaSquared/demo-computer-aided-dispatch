@@ -161,7 +161,12 @@ async function listIncidents(token: string, expectedStatus: number): Promise<voi
   const res = await req<{ incidents?: Incident[] } & ErrorBody>(
     GATEWAY_BASE,
     'GET',
-    '/api/incidents?tier=fire',
+    // Unscoped (no `?tier=` filter): the observer's tier-conditioned
+    // `view Incident` rule is enough — see the doc comment at the top of
+    // this file. A `?tier=fire` query would 403 a police observer, which
+    // is correct but tests a different lane (cross-tier read is the
+    // commander's privilege, not the observer's).
+    '/api/incidents',
     undefined,
     token,
   );
