@@ -1,4 +1,4 @@
-import { type ClassifyRequest, type TriageSuggestion, TriageV1 } from '@cad/proto';
+import { type ClassifyRequest, type ClassifyResponse, TriageV1 } from '@cad/proto';
 import * as grpc from '@grpc/grpc-js';
 
 /**
@@ -10,7 +10,7 @@ import * as grpc from '@grpc/grpc-js';
  * status code the HTTP layer maps onto an HTTP status).
  */
 export interface TriageClient {
-  classify(req: ClassifyRequest, md?: grpc.Metadata): Promise<TriageSuggestion>;
+  classify(req: ClassifyRequest, md?: grpc.Metadata): Promise<ClassifyResponse>;
   close(): void;
 }
 
@@ -33,7 +33,7 @@ export function createTriageClient(url: string): TriageClient {
   }
 
   return {
-    classify: (req, md) => call<ClassifyRequest, TriageSuggestion>(client.classify, req, md),
+    classify: (req, md) => call<ClassifyRequest, ClassifyResponse>(client.classify, req, md),
     close: () => client.close(),
   };
 }

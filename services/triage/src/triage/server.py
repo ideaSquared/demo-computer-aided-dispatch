@@ -104,7 +104,7 @@ def _make_servicer():  # noqa: ANN202 — return type is the generated class.
             suggestion = classify_stub(req)
 
             severity_name = _SEVERITY_TO_PROTO_NAME[suggestion.severity]
-            return triage_pb2.TriageSuggestion(
+            return triage_pb2.ClassifyResponse(
                 severity=getattr(triage_pb2, severity_name),
                 confidence=suggestion.confidence,
                 rationale=suggestion.rationale,

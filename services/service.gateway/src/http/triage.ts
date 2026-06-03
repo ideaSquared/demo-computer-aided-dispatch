@@ -8,7 +8,7 @@ import { type GateDeps, operatorMetadata, requireAbility } from './gate.js';
 /**
  * HTTP query path for the AI triage suggester. The route is thin: validate
  * the body with Zod, map the lowercase wire enums to the proto ints, call
- * the triage gRPC client, then map the proto `TriageSuggestion` response
+ * the triage gRPC client, then map the proto `ClassifyResponse` response
  * back to the lowercase JSON shape (or the gRPC status to an HTTP status
  * on error).
  *

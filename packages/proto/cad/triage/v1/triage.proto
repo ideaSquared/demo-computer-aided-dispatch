@@ -19,12 +19,12 @@ package cad.triage.v1;
 service TriageService {
   // Hard-coded stub in PR 3a (returns medium/0.5/stub/stub-0.0.0); PR 3b
   // wires the Ollama call behind the same surface.
-  rpc Classify(TriageRequest) returns (TriageSuggestion);
+  rpc Classify(ClassifyRequest) returns (ClassifyResponse);
 }
 
 // ---- requests --------------------------------------------------------------
 
-message TriageRequest {
+message ClassifyRequest {
   string incident_id = 1;
   string notes = 2;
   // Intake fields the call handler captured (caller, location, etc).
@@ -36,7 +36,7 @@ message TriageRequest {
 
 // ---- responses -------------------------------------------------------------
 
-message TriageSuggestion {
+message ClassifyResponse {
   Severity severity = 1;
   double confidence = 2;        // 0..1
   string rationale = 3;         // model-generated short text; empty for the stub.

@@ -89,14 +89,14 @@ export type {
   UpdateStatusResponse,
 } from '../gen/ts/cad/resource/v1/resource.js';
 export * as ResourceV1 from '../gen/ts/cad/resource/v1/resource.js';
-// service.triage — Phase 5 PR 3a. `TriageRequest` collides with the existing
+// service.triage — Phase 5 PR 3a. The RPC's request/response messages follow
+// buf STANDARD's method-prefixed convention (`ClassifyRequest` /
+// `ClassifyResponse`), which also dodges the flat-surface collision with
 // `cad.incident.v1.TriageRequest` (the incident.triage state-transition
-// request) at the flat surface, so we re-export it as `ClassifyRequest` to
-// keep the contract namespace clean for callers. `TriageSuggestion` is
-// unambiguous and re-exports straight through.
+// request) without aliasing.
 export type {
-  TriageRequest as ClassifyRequest,
-  TriageSuggestion,
+  ClassifyRequest,
+  ClassifyResponse,
 } from '../gen/ts/cad/triage/v1/triage.js';
 export * as TriageV1 from '../gen/ts/cad/triage/v1/triage.js';
 
