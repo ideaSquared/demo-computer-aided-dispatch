@@ -33,6 +33,7 @@
     "smoke:lifecycle": "tsx tools/scripts/lifecycle-smoke.ts",
     "smoke:auth": "tsx tools/scripts/auth-smoke.ts",
     "smoke:enforce": "tsx tools/scripts/enforce-smoke.ts",
+    "smoke:dev-login": "tsx tools/scripts/dev-login-smoke.ts",
     "dev:deps": "docker compose -f infra/docker-compose.deps.yml up -d",
     "dev:deps:down": "docker compose -f infra/docker-compose.deps.yml down",
     "dev:docker": "docker compose -f infra/docker-compose.dev.yml watch",

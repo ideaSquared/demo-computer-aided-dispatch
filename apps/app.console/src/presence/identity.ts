@@ -1,4 +1,5 @@
 import type { ServiceTier } from '@cad/events/presence';
+import type { Session } from '../auth/session.js';
 
 export interface Identity {
   readonly operatorId: string;
@@ -7,26 +8,27 @@ export interface Identity {
 }
 
 /**
- * Phase-1 identity: from URL query params, mirroring the gateway's
- * `readSession` stub. Phase 4 swaps this for the Lucia cookie/JWT round-trip.
+ * Identity is derived from the auth session: Phase-1's URL stub is gone now
+ * that login lands a real JWT. Components that need an identity get it from
+ * `useAuth().session.operator`, which this helper repackages into the older
+ * `Identity` shape so we don't have to re-thread every consumer.
  */
-export function readIdentity(search: string): Identity {
-  const params = new URLSearchParams(search);
-  const operatorId = params.get('operator')?.trim();
-  if (!operatorId) {
-    return { operatorId: '', displayName: '', tier: 'police' };
-  }
-  const tierRaw = params.get('tier')?.trim();
-  const tier: ServiceTier = tierRaw === 'medical' || tierRaw === 'fire' ? tierRaw : 'police';
-  const displayName = params.get('name')?.trim() || operatorId;
-  return { operatorId, displayName, tier };
+export function identityFromSession(session: Session): Identity {
+  return {
+    operatorId: session.operator.id,
+    displayName: session.operator.displayName,
+    tier: session.operator.tier,
+  };
 }
 
-export function wsUrlFor(identity: Identity): string {
-  const params = new URLSearchParams({
-    operator: identity.operatorId,
-    tier: identity.tier,
-    name: identity.displayName,
-  });
+/**
+ * WS connect URL. The gateway accepts `?token=<jwt>` and validates via
+ * `service.auth.ValidateToken` on connect (see services/service.gateway/
+ * src/ws/connection.ts). Pass `null` for an anonymous probe (the gateway
+ * 401s if `DEV_AUTH_BYPASS=false`).
+ */
+export function wsUrlFor(accessToken: string | null): string {
+  if (!accessToken) return '/ws';
+  const params = new URLSearchParams({ token: accessToken });
   return `/ws?${params.toString()}`;
 }

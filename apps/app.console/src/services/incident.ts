@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { apiBaseUrl } from './libraryServices.js';
+import { authedFetch } from './http.js';
 
 /**
  * Typed client for the gateway's incident HTTP API. Enums are lowercase
@@ -133,13 +133,9 @@ export interface RecommendUnitsParams {
 }
 
 async function request<T>(path: string, schema: z.ZodType<T>, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${apiBaseUrl}${path}`, {
-    ...init,
-    headers: {
-      ...(init?.body ? { 'content-type': 'application/json' } : {}),
-      ...init?.headers,
-    },
-  });
+  // `authedFetch` adds the Bearer token from the AuthProvider + handles 401
+  // by clearing the session (bouncing the user back to /login).
+  const res = await authedFetch(path, init);
 
   const raw: unknown = await res.json().catch(() => undefined);
 

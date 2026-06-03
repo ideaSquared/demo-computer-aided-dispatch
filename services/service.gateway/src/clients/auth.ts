@@ -1,5 +1,13 @@
 import type {
+  ListSeededOperatorsRequest,
+  ListSeededOperatorsResponse,
+  LoginRequest,
+  LoginResponse,
   Operator as ProtoOperator,
+  RefreshRequest,
+  RefreshResponse,
+  RevokeSessionRequest,
+  RevokeSessionResponse,
   ValidateTokenRequest,
   ValidateTokenResponse,
 } from '@cad/proto';
@@ -11,12 +19,18 @@ import * as grpc from '@grpc/grpc-js';
  * the shape of `clients/incident.ts` etc. — construction does no I/O; the
  * channel connects on the first RPC.
  *
- * The gateway only ever calls `ValidateToken` on the auth service; login /
- * refresh / revoke are exposed by service.auth directly (its dev HTTP
- * routes today, a proper gateway login route in a later PR).
+ * The gateway proxies login/refresh/revoke for the console's HTTP layer (so
+ * the browser only ever talks to the gateway origin), and calls
+ * `ValidateToken` itself on every authenticated request + WS connect.
+ * `ListSeededOperators` backs the dev role-switcher; the auth service gates
+ * it on `DEV_MODE=true` so a production deploy still 403s.
  */
 export interface AuthClient {
+  login(req: LoginRequest): Promise<LoginResponse>;
+  refresh(req: RefreshRequest): Promise<RefreshResponse>;
+  revokeSession(req: RevokeSessionRequest): Promise<RevokeSessionResponse>;
   validateToken(req: ValidateTokenRequest): Promise<ValidateTokenResponse>;
+  listSeededOperators(req: ListSeededOperatorsRequest): Promise<ListSeededOperatorsResponse>;
   close(): void;
 }
 
@@ -33,8 +47,17 @@ export function createAuthClient(url: string): AuthClient {
   }
 
   return {
+    login: (req) => call<LoginRequest, LoginResponse>(client.login, req),
+    refresh: (req) => call<RefreshRequest, RefreshResponse>(client.refresh, req),
+    revokeSession: (req) =>
+      call<RevokeSessionRequest, RevokeSessionResponse>(client.revokeSession, req),
     validateToken: (req) =>
       call<ValidateTokenRequest, ValidateTokenResponse>(client.validateToken, req),
+    listSeededOperators: (req) =>
+      call<ListSeededOperatorsRequest, ListSeededOperatorsResponse>(
+        client.listSeededOperators,
+        req,
+      ),
     close: () => client.close(),
   };
 }
