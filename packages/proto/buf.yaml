@@ -3,6 +3,12 @@ version: v2
 # fixtures shipped inside @grpc/grpc-js and protobufjs and the lint pass
 # blows up on them. Imports are still resolved from the module root so
 # `import "cad/common/v1/geo.proto"` works.
+#
+# Cache-buster: a .proto change in CAD's monorepo doesn't always
+# invalidate turbo's proto-package build cache (cad/** is the inputs
+# glob but turbo's restore_keys can replay stale gen output). Touching
+# buf.yaml — which IS a build input — forces a re-run when the wire
+# contract changes. Strip this comment if you find a cleaner trigger.
 modules:
   - path: .
     excludes:
