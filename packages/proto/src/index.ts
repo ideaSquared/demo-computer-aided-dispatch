@@ -16,6 +16,21 @@
  *      ambiguity: `import type { OpenRequest } from '@cad/proto'`.
  */
 
+export type {
+  ListSeededOperatorsRequest,
+  ListSeededOperatorsResponse,
+  LoginRequest,
+  LoginResponse,
+  Operator,
+  RefreshRequest,
+  RefreshResponse,
+  RevokeSessionRequest,
+  RevokeSessionResponse,
+  SeededOperator,
+  ValidateTokenRequest,
+  ValidateTokenResponse,
+} from '../gen/ts/cad/auth/v1/auth.js';
+export * as AuthV1 from '../gen/ts/cad/auth/v1/auth.js';
 export * from '../gen/ts/cad/common/v1/geo.js';
 export type { CheckRequest, CheckResponse } from '../gen/ts/cad/common/v1/health.js';
 export * as HealthV1 from '../gen/ts/cad/common/v1/health.js';

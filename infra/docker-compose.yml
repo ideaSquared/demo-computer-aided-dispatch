@@ -37,15 +37,24 @@ services:
       context: ..
       dockerfile: services/service.auth/Dockerfile
     ports:
-      - "5010:5010"
+      - "5010:5010"   # HTTP /health + dev-only /dev/* routes
+      - "5011:5011"   # gRPC AuthService
     environment:
       NODE_ENV: development
       PORT: "5010"
+      GRPC_PORT: "5011"
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
       DATABASE_URL: postgres://cad:cad@postgres:5432/cad
       DB_SCHEMA: auth
+      MIGRATE_ON_BOOT: "true"
       NATS_URL: nats://nats:4222
       REDIS_URL: redis://redis:6379
+      # Dev-only: gates `ListSeededOperators` + the `/dev/*` HTTP routes
+      # the seed script uses. Production deployments set this to false (or
+      # omit it). See services/service.auth/README.md.
+      DEV_MODE: "true"
+      # Placeholder HS256 secret. Production injects a real one.
+      JWT_SECRET: dev-only-not-a-real-secret
     depends_on:
       postgres:
         condition: service_healthy

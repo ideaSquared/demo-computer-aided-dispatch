@@ -25,6 +25,13 @@ const HOST = process.env.SEED_HOST ?? 'localhost';
 const PORT = Number(process.env.SEED_PORT ?? '5000');
 const BASE = `http://${HOST}:${PORT}`;
 
+// The auth service has its own HTTP listener (5010 by default) — the
+// gateway doesn't proxy `/dev/*` (and won't ever, those are dev-only).
+// Override via SEED_AUTH_HOST / SEED_AUTH_PORT.
+const AUTH_HOST = process.env.SEED_AUTH_HOST ?? HOST;
+const AUTH_PORT = Number(process.env.SEED_AUTH_PORT ?? '5010');
+const AUTH_BASE = `http://${AUTH_HOST}:${AUTH_PORT}`;
+
 type Tier = 'police' | 'medical' | 'fire';
 type Severity = 'low' | 'medium' | 'high' | 'critical';
 interface Geo {
@@ -190,11 +197,89 @@ async function waitForReady(): Promise<void> {
   }
 }
 
+// Auth-side helpers (operators are seeded directly via service.auth's
+// dev-only HTTP, not through the gateway — see the PRD).
+
+interface SeededOperator {
+  email: string;
+  password: string;
+  displayName: string;
+  tier: Tier;
+  roles: string[];
+}
+
+async function authReq<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const res = await fetch(`${AUTH_BASE}${path}`, {
+    method,
+    ...(body === undefined
+      ? {}
+      : { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`${method} ${AUTH_BASE}${path} → ${res.status} ${text}`);
+  }
+  return (await res.json()) as T;
+}
+
+async function waitForAuth(): Promise<void> {
+  const deadline = Date.now() + 60_000;
+  for (;;) {
+    try {
+      const res = await fetch(`${AUTH_BASE}/health`);
+      if (res.ok) return;
+    } catch {
+      /* not up yet */
+    }
+    if (Date.now() > deadline) {
+      console.error(`[seed] ${AUTH_BASE}/health not ready within 60s`);
+      console.error('[seed] is service-auth in the stack with DEV_MODE=true?');
+      process.exit(1);
+    }
+    await sleep(1000);
+  }
+}
+
+/**
+ * Upsert the PRD's canonical seeded-operator set via service.auth's dev-only
+ * HTTP route. Idempotent — re-running just refreshes password hashes. The
+ * service must be started with DEV_MODE=true (compose does this).
+ */
+async function seedOperators(): Promise<SeededOperator[]> {
+  console.log(`[seed] ${AUTH_BASE} — waiting for service-auth…`);
+  await waitForAuth();
+
+  const list = await authReq<{ seededOperators: SeededOperator[] }>('GET', '/dev/seeded-operators');
+  let ok = 0;
+  for (const op of list.seededOperators) {
+    try {
+      await authReq('POST', '/dev/operators', {
+        email: op.email,
+        password: op.password,
+        displayName: op.displayName,
+        tier: op.tier,
+        roles: op.roles,
+      });
+      ok += 1;
+      console.log(`  ✓ op    ${op.tier.padEnd(7)} ${op.roles.join(',').padEnd(13)} ${op.email}`);
+    } catch (err) {
+      console.error(`  ✗ op    ${op.email}: ${(err as Error).message}`);
+    }
+  }
+  console.log(`[seed] ${ok}/${list.seededOperators.length} operators upserted`);
+  return list.seededOperators;
+}
+
 async function main(): Promise<void> {
   console.log(`[seed] ${BASE} — waiting for the stack to be ready…`);
   await waitForReady();
 
-  // 1. Register the fleet, pooling available units by tier (FIFO) so we can
+  // 1. Seed operators via service.auth's dev-only HTTP. Keep this BEFORE
+  //    the gateway-side fleet/incident seed so the credentials table prints
+  //    even if a later step crashes.
+  const operators = await seedOperators();
+
+  // 2. Register the fleet, pooling available units by tier (FIFO) so we can
   //    dispatch real same-tier units to incidents below.
   const pool: Record<Tier, string[]> = { police: [], medical: [], fire: [] };
   const callsignOf = new Map<string, string>();
@@ -216,7 +301,7 @@ async function main(): Promise<void> {
     }
   }
 
-  // 2. Open incidents; triage + dispatch to real units where asked.
+  // 3. Open incidents; triage + dispatch to real units where asked.
   let incidents = 0;
   let dispatched = 0;
   for (const seed of INCIDENTS) {
@@ -262,11 +347,23 @@ async function main(): Promise<void> {
   }
 
   console.log(
-    `[seed] done — ${units} units, ${incidents} incidents (${dispatched} dispatched to real units).`,
+    `[seed] done — ${operators.length} operators, ${units} units, ${incidents} incidents (${dispatched} dispatched to real units).`,
   );
   console.log(
     '[seed] dispatched units flip to `dispatched` shortly after, via the NATS dispatch→unit loop.',
   );
+
+  // Print the dev credentials table at the end so a copy/paste from the
+  // terminal gets you straight into the console as any seeded persona.
+  console.log('');
+  console.log('[seed] dev credentials (DEV_MODE=true only — never use in production):');
+  console.log('       email                              password   tier     roles');
+  for (const op of operators) {
+    console.log(
+      `       ${op.email.padEnd(34)} ${op.password.padEnd(10)} ${op.tier.padEnd(8)} ${op.roles.join(',')}`,
+    );
+  }
+
   process.exit(incidents > 0 ? 0 : 1);
 }
 
