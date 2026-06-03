@@ -30,6 +30,21 @@ export type Severity = (typeof SEVERITIES)[number];
 const LocationSchema = z.object({ lat: z.number(), lng: z.number() });
 export type Location = z.infer<typeof LocationSchema>;
 
+/**
+ * Phase 5 PR 3b: optional AI classifier suggestion the console renders as a
+ * chip on the incident row. `null` for incidents the classifier hasn't run
+ * on. Severity here mirrors the manual severity vocabulary so the "Apply"
+ * button can pre-fill the triage select directly.
+ */
+export const AiSuggestionSchema = z.object({
+  severity: z.enum(SEVERITIES),
+  confidence: z.number().min(0).max(1),
+  rationale: z.string(),
+  modelVersion: z.string(),
+  receivedAt: z.string(),
+});
+export type AiSuggestion = z.infer<typeof AiSuggestionSchema>;
+
 export const IncidentSchema = z.object({
   id: z.string(),
   title: z.string(),
@@ -42,6 +57,10 @@ export const IncidentSchema = z.object({
   openedAt: z.string(),
   updatedAt: z.string(),
   version: z.number(),
+  // `.nullish()` lets the field be missing on older payloads from a service
+  // that hasn't been redeployed yet; we coerce to `null` at the boundary so
+  // every downstream caller can rely on the shape.
+  aiSuggestion: AiSuggestionSchema.nullish().transform((v) => v ?? null),
 });
 export type Incident = z.infer<typeof IncidentSchema>;
 

@@ -40,6 +40,7 @@ function makeIncident(over: Partial<Incident> = {}): Incident {
     openedAt: '2026-06-02T10:00:00.000Z',
     updatedAt: '2026-06-02T10:00:00.000Z',
     version: 0,
+    aiSuggestion: null,
     ...over,
   };
 }
@@ -322,5 +323,69 @@ describe('IncidentBoard', () => {
 
     expect(await screen.findByText('Engine 7')).toBeInTheDocument();
     expect(screen.queryByText('Engine 9')).not.toBeInTheDocument();
+  });
+
+  it('renders the AI suggestion chip when aiSuggestion is populated', async () => {
+    const api = makeApi({
+      list: vi.fn(async () => [
+        makeIncident({
+          aiSuggestion: {
+            severity: 'high',
+            confidence: 0.78,
+            rationale: 'chest pain, male 60s, conscious',
+            modelVersion: 'llama3.2:3b:v1',
+            receivedAt: '2026-06-03T10:00:01.000Z',
+          },
+        }),
+      ]),
+    });
+    render(<Board api={api} />);
+
+    expect(await screen.findByLabelText('AI suggested severity')).toBeInTheDocument();
+    expect(screen.getByText(/chest pain/i)).toBeInTheDocument();
+    // Confidence renders as a percentage.
+    expect(screen.getByText('78%')).toBeInTheDocument();
+  });
+
+  it('does not render the chip when aiSuggestion is null', async () => {
+    const api = makeApi({
+      list: vi.fn(async () => [makeIncident({ aiSuggestion: null })]),
+    });
+    render(<Board api={api} />);
+
+    await screen.findByText('structure fire on 5th');
+    expect(screen.queryByLabelText('AI suggested severity')).not.toBeInTheDocument();
+  });
+
+  it('clicking apply on the chip pre-fills the triage severity', async () => {
+    const api = makeApi({
+      list: vi.fn(async () =>
+        // The chip's Apply button only renders when state is 'open'.
+        [
+          makeIncident({
+            state: 'open',
+            version: 3,
+            aiSuggestion: {
+              severity: 'critical',
+              confidence: 0.91,
+              rationale: 'mass casualty risk',
+              modelVersion: 'llama3.2:3b:v1',
+              receivedAt: '2026-06-03T10:00:01.000Z',
+            },
+          }),
+        ],
+      ),
+    });
+    render(<Board api={api} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /apply/i }));
+
+    await waitFor(() =>
+      expect(api.triage).toHaveBeenCalledWith('i1', {
+        severity: 'critical',
+        expectedVersion: 3,
+        triagedBy: 'alex',
+      }),
+    );
   });
 });

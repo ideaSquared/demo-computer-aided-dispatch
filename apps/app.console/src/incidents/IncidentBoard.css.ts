@@ -41,6 +41,19 @@ export const empty = style({
 
 export const title = style({
   fontWeight: 600,
+  display: 'flex',
+  flexDirection: 'column',
+  gap: vars.spacing['4'],
+  minWidth: 0,
+});
+
+// Wraps the AI chip below the incident title. Smaller line-height + no wrap
+// so the chip itself controls truncation.
+export const aiSuggestion = style({
+  display: 'flex',
+  alignItems: 'center',
+  fontWeight: 400,
+  minWidth: 0,
 });
 
 export const meta = style({
