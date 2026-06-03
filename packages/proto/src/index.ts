@@ -89,6 +89,16 @@ export type {
   UpdateStatusResponse,
 } from '../gen/ts/cad/resource/v1/resource.js';
 export * as ResourceV1 from '../gen/ts/cad/resource/v1/resource.js';
+// service.triage — Phase 5 PR 3a. The RPC's request/response messages follow
+// buf STANDARD's method-prefixed convention (`ClassifyRequest` /
+// `ClassifyResponse`), which also dodges the flat-surface collision with
+// `cad.incident.v1.TriageRequest` (the incident.triage state-transition
+// request) without aliasing.
+export type {
+  ClassifyRequest,
+  ClassifyResponse,
+} from '../gen/ts/cad/triage/v1/triage.js';
+export * as TriageV1 from '../gen/ts/cad/triage/v1/triage.js';
 
 // Hand-rolled health constants kept for any callers still using the v0
 // scaffold from before codegen landed. New code should use

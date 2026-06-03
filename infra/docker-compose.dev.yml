@@ -50,6 +50,7 @@ services:
       DISPATCH_GRPC_URL: service-dispatch:5031
       AUTH_GRPC_URL: service-auth:5011
       AUDIT_GRPC_URL: service-audit:5091
+      TRIAGE_GRPC_URL: service-triage:5081
       # Demo-friendly default — see infra/docker-compose.yml for the policy.
       DEV_AUTH_BYPASS: "true"
     develop:
@@ -211,20 +212,50 @@ services:
         - { action: rebuild, path: ../packages }
         - { action: rebuild, path: ../pnpm-lock.yaml }
 
-  # Python service — uvicorn --reload gives in-process hot reload; Compose
-  # Watch syncs the source in. Reuses the production triage Dockerfile.
+  # Python service — runs both FastAPI (PORT) and gRPC (GRPC_PORT) in one
+  # process via `python -m triage`. We drop the prior uvicorn --reload flag
+  # because gRPC + uvicorn-reload don't coexist cleanly (uvicorn's
+  # subprocess reload would orphan the gRPC server); Compose Watch on
+  # `rebuild` keeps dev iteration fast. Reuses the production Dockerfile so
+  # the codegen step + non-root user are identical to prod.
   service-triage:
     build:
       context: ..
       dockerfile: services/triage/Dockerfile
-    command: ["python", "-m", "uvicorn", "triage.app:app", "--reload", "--host", "0.0.0.0", "--port", "5080"]
-    ports: ["5080:5080"]
+    ports: ["5080:5080", "5081:5081"]
     environment:
       PORT: "5080"
+      GRPC_PORT: "5081"
       OLLAMA_URL: http://ollama:11434
+      OLLAMA_MODEL: llama3.2:3b
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+    depends_on:
+      ollama:
+        condition: service_healthy
     restart: unless-stopped
     develop:
       watch:
-        - { action: sync, path: ../services/triage/src, target: /app/src }
+        # Python src changes need a rebuild (CMD runs `python -m triage`,
+        # not uvicorn --reload — see the comment above).
+        - { action: rebuild, path: ../services/triage/src }
         - { action: rebuild, path: ../services/triage/pyproject.toml }
+        - { action: rebuild, path: ../packages/proto/cad/triage }
+
+  # Local LLM runtime for service.triage. Identical to the production
+  # stack: PR 3a doesn't pull a model (the stub classifier doesn't need
+  # one); PR 3b will add the pull step.
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - cad-ollama:/root/.ollama
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  cad-ollama:

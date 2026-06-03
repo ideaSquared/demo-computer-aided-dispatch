@@ -8,13 +8,17 @@ dependencies = [
   "uvicorn[standard]>=0.48.0",
   "pydantic>=2.13.4",
   "httpx>=0.28.1",
+  "grpcio>=1.68.0",
+  "protobuf>=5.28.0",
   "opentelemetry-distro[otlp]>=0.63b1",
+  "opentelemetry-instrumentation-grpc>=0.63b1",
 ]
 
 [project.optional-dependencies]
 dev = [
   "pytest>=9.0.3",
   "pytest-asyncio>=1.4.0",
+  "grpcio-tools>=1.68.0",
   "ruff>=0.15.15",
   "mypy>=2.1.0",
 ]

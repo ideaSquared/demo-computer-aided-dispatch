@@ -39,6 +39,7 @@ pnpm-debug.log*
 
 # Generated code
 packages/proto/gen/
+services/triage/cad/
 
 # Python (triage-service)
 __pycache__/
@@ -48,6 +49,10 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
+# uv writes a lockfile on first run; pyproject.toml pins versions and the
+# Dockerfile is the canonical install path — committing it here just adds
+# churn. Revisit if/when we adopt uv sync as the dev workflow.
+services/triage/uv.lock
 
 # Claude Code session-local worktrees
 # (agents run in isolated worktrees under .claude/worktrees/<id>/ — these
