@@ -24,6 +24,7 @@ services:
       RESOURCE_GRPC_URL: service-resource:5041
       DISPATCH_GRPC_URL: service-dispatch:5031
       AUTH_GRPC_URL: service-auth:5011
+      AUDIT_GRPC_URL: service-audit:5091
       # Demo-friendly default for now — unauthenticated requests get a
       # synthesised supervisor session so the existing smokes keep working.
       # Production sets this false; the gateway then requires a real
@@ -193,13 +194,16 @@ services:
       context: ..
       dockerfile: services/service.audit/Dockerfile
     ports:
-      - "5070:5070"
+      - "5090:5090"   # HTTP /health
+      - "5091:5091"   # gRPC AuditQueryService
     environment:
       NODE_ENV: development
-      PORT: "5070"
+      PORT: "5090"
+      GRPC_PORT: "5091"
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
       DATABASE_URL: postgres://cad:cad@postgres:5432/cad
       DB_SCHEMA: audit
+      MIGRATE_ON_BOOT: "true"
       NATS_URL: nats://nats:4222
       REDIS_URL: redis://redis:6379
     depends_on:

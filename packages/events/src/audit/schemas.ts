@@ -32,7 +32,10 @@ const AuditActorSchema = z.object({
 });
 
 const AuditSubjectSchema = z.object({
-  kind: z.enum(['Incident', 'Unit', 'Operator', 'Session']),
+  // `Audit` is included because a denied view of the audit log is itself
+  // an audit-worthy event — the same gate that emits `denied` on a regular
+  // dispatch refusal fires for an unauthorised read of /api/audit/*.
+  kind: z.enum(['Incident', 'Unit', 'Operator', 'Session', 'Audit']),
   id: z.string().min(1).optional(),
 });
 

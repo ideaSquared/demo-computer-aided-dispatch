@@ -4,6 +4,7 @@ import { subject } from '../index.js';
 
 const incident = (tier: string) => subject('Incident', { tier });
 const unit = (props: { tier?: string; id?: string }) => subject('Unit', props);
+const audit = (tier: string) => subject('Audit', { tier });
 
 function ability(ctx: Partial<OperatorContext> & Pick<OperatorContext, 'roles'>) {
   return defineAbilitiesFor({ tier: 'fire', ...ctx });
@@ -81,5 +82,38 @@ describe('role scopes', () => {
   it('no roles ⇒ no abilities at all', () => {
     const a = defineAbilitiesFor({ tier: 'fire', roles: [] });
     expect(a.can('view', incident('fire'))).toBe(false);
+  });
+});
+
+describe('audit log access', () => {
+  it('a supervisor can view the audit log within their own tier only', () => {
+    const a = ability({ tier: 'fire', roles: ['supervisor'] });
+    expect(a.can('view', audit('fire'))).toBe(true);
+    expect(a.can('view', audit('police'))).toBe(false);
+    expect(a.can('view', audit('medical'))).toBe(false);
+    // unscoped check also passes because the rule exists at all on Audit
+    expect(a.can('view', 'Audit')).toBe(true);
+  });
+
+  it('a commander can view the audit log across every tier', () => {
+    const a = ability({ tier: 'police', roles: ['commander'] });
+    expect(a.can('view', audit('police'))).toBe(true);
+    expect(a.can('view', audit('fire'))).toBe(true);
+    expect(a.can('view', audit('medical'))).toBe(true);
+    expect(a.can('view', 'Audit')).toBe(true);
+  });
+
+  it('an admin can view the audit log (covered by manage all)', () => {
+    const a = ability({ roles: ['admin'] });
+    expect(a.can('view', audit('fire'))).toBe(true);
+    expect(a.can('view', 'Audit')).toBe(true);
+  });
+
+  it('call_handler, dispatcher, responder and observer cannot view the audit log', () => {
+    for (const role of ['call_handler', 'dispatcher', 'responder', 'observer'] as const) {
+      const a = ability({ tier: 'fire', roles: [role] });
+      expect(a.can('view', audit('fire'))).toBe(false);
+      expect(a.can('view', 'Audit')).toBe(false);
+    }
   });
 });

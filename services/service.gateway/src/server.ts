@@ -2,11 +2,13 @@ import { connect } from '@cad/events';
 import { createRedisSubscriber } from '@cad/redis';
 import websocket from '@fastify/websocket';
 import Fastify from 'fastify';
+import { createAuditClient } from './clients/audit.js';
 import { createAuthClient } from './clients/auth.js';
 import { createDispatchClient } from './clients/dispatch.js';
 import { createIncidentClient } from './clients/incident.js';
 import { createResourceClient } from './clients/resource.js';
 import { config } from './config.js';
+import { registerAuditRoutes } from './http/audit.js';
 import { registerAuthRoutes } from './http/auth.js';
 import { registerDispatchRoutes } from './http/dispatch.js';
 import type { GateDeps } from './http/gate.js';
@@ -66,6 +68,10 @@ const dispatchClient = createDispatchClient(config.DISPATCH_GRPC_URL);
 registerDispatchRoutes(app, dispatchClient, incidentClient, gateDeps);
 app.log.info({ dispatchGrpc: config.DISPATCH_GRPC_URL }, 'dispatch HTTP query path ready');
 
+const auditClient = createAuditClient(config.AUDIT_GRPC_URL);
+registerAuditRoutes(app, auditClient, gateDeps);
+app.log.info({ auditGrpc: config.AUDIT_GRPC_URL }, 'audit HTTP read path ready');
+
 await app.register(websocket);
 
 // Registry callbacks lazily subscribe/unsubscribe Redis channels as topic
@@ -106,6 +112,7 @@ async function shutdown(signal: string): Promise<void> {
     incidentClient.close();
     resourceClient.close();
     dispatchClient.close();
+    auditClient.close();
     await nats.drain();
     await redisSub.quit();
   } finally {
