@@ -27,7 +27,14 @@ export function createDbClient(opts: CreateClientOptions): DbClient {
   const sql = postgres(opts.url, {
     max: opts.max ?? 10,
     connection: {
-      search_path: opts.schema,
+      // Service schema first so unqualified table names resolve there
+      // (the cross-schema-joins discipline still applies — keep table refs
+      // scoped). `public` follows so PostGIS-installed types (`geography`,
+      // `geometry`) and operators (`<->`) resolve unqualified for services
+      // that use them. Listing public last means a service-table-named
+      // `public.foo` is shadowed by `<schema>.foo`, which is the right
+      // precedence.
+      search_path: `${opts.schema}, public`,
     },
     onnotice: () => {
       /* swallow NOTICE; structured logging is the channel */
