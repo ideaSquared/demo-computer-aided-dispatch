@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@cad/config": "workspace:*",
+    "@cad/lib.authz": "workspace:*",
     "@cad/observability": "workspace:*",
     "@cad/proto": "workspace:*",
     "@grpc/grpc-js": "^1.13.6",

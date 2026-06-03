@@ -4,6 +4,7 @@ import { withTransaction } from '@cad/db';
 import type { NatsConnection } from '@cad/events';
 import { publish, subjects } from '@cad/events';
 import { UnitRegisteredSchema, UnitStatusChangedSchema } from '@cad/events/resource';
+import { subject as caslSubject, PermissionDeniedError } from '@cad/lib.authz';
 import { ResourceV1 } from '@cad/proto';
 import * as grpc from '@grpc/grpc-js';
 import {
@@ -26,6 +27,7 @@ import {
   type UnitEvent,
   type UnitState,
 } from '../domain/index.js';
+import { ensureAllowed, readOperatorContext } from './operator.js';
 import { fromProtoStatus, fromProtoTier, toProtoUnit } from './projection.js';
 
 interface Deps {
@@ -58,12 +60,20 @@ export function createHandlers(deps: Deps): ResourceV1.ResourceServiceServer {
 
   type Cmd = (state: UnitState | null) => UnitEvent[];
 
+  /**
+   * Optional `preCheck` runs against the folded current state before the
+   * command is applied — natural place for the defence-in-depth re-check
+   * that needs the unit's tier.
+   */
   async function execute(
     aggregateId: string,
     command: Cmd,
+    preCheck?: (state: UnitState | null) => void,
   ): Promise<{ newEvents: UnitEvent[]; nextState: UnitState; newVersion: number }> {
     const { events: history, version: expectedVersion } = await loadEvents(deps.db, aggregateId);
-    const newEvents = command(fold(history));
+    const current = fold(history);
+    preCheck?.(current);
+    const newEvents = command(current);
     if (newEvents.length === 0) {
       // Every command in this service emits ≥ 1 event; an empty list would
       // mean a silent no-op the caller can't distinguish from success.
@@ -124,6 +134,13 @@ export function createHandlers(deps: Deps): ResourceV1.ResourceServiceServer {
   }
 
   function mapError(err: unknown): grpc.ServiceError {
+    if (err instanceof PermissionDeniedError) {
+      return Object.assign(new Error(err.message), {
+        code: grpc.status.PERMISSION_DENIED,
+        details: err.message,
+        metadata: new grpc.Metadata(),
+      });
+    }
     if (err instanceof InvariantError) {
       return Object.assign(new Error(err.message), {
         code: grpc.status.FAILED_PRECONDITION,
@@ -156,6 +173,11 @@ export function createHandlers(deps: Deps): ResourceV1.ResourceServiceServer {
           if (!tier) {
             throw new InvariantError('tier is required');
           }
+          ensureAllowed(
+            readOperatorContext(call.metadata),
+            'manageFleet',
+            caslSubject('Unit', { tier }),
+          );
           const id = newId();
           const { nextState, newEvents, newVersion } = await execute(id, (state) =>
             register(state, {
@@ -183,7 +205,23 @@ export function createHandlers(deps: Deps): ResourceV1.ResourceServiceServer {
           if (!target) throw new InvariantError('status is required');
           const changedBy = call.request.changedBy || 'unknown';
           const command = commandFor(target, call.request.incidentId, changedBy, now());
-          const { nextState, newEvents, newVersion } = await execute(call.request.id, command);
+          const op = readOperatorContext(call.metadata);
+          const { nextState, newEvents, newVersion } = await execute(
+            call.request.id,
+            command,
+            (state) => {
+              if (state) {
+                // Responder may setUnitStatus only on its own unit (id rule);
+                // dispatcher/supervisor may setUnitStatus on any unit in tier.
+                // The CASL ability handles both; we just pass the id+tier.
+                ensureAllowed(
+                  op,
+                  'setUnitStatus',
+                  caslSubject('Unit', { id: call.request.id, tier: state.tier }),
+                );
+              }
+            },
+          );
           await publishAll(
             call.request.id,
             nextState.tier,

@@ -4,6 +4,7 @@ export default defineConfig({
   entry: [
     'src/index.ts',
     'src/auth/index.ts',
+    'src/audit/index.ts',
     'src/incident/index.ts',
     'src/resource/index.ts',
     'src/presence/index.ts',

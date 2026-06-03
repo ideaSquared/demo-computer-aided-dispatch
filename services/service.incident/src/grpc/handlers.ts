@@ -12,6 +12,7 @@ import {
   IncidentTriagedSchema,
   IncidentUnitArrivedSchema,
 } from '@cad/events/incident';
+import { subject as caslSubject, PermissionDeniedError } from '@cad/lib.authz';
 import { IncidentV1 } from '@cad/proto';
 import * as grpc from '@grpc/grpc-js';
 import {
@@ -34,6 +35,7 @@ import {
   type ServiceTier,
   triage,
 } from '../domain/index.js';
+import { ensureAllowed, readOperatorContext } from './operator.js';
 import { fromProtoSeverity, fromProtoTier, toProtoIncident } from './projection.js';
 
 interface Deps {
@@ -66,12 +68,20 @@ export function createHandlers(deps: Deps): IncidentV1.IncidentServiceServer {
 
   type Cmd = (state: IncidentState | null) => IncidentEvent[];
 
+  /**
+   * The optional `preCheck` runs against the folded current state BEFORE
+   * the command is applied — the natural place for a defence-in-depth
+   * permission re-check that needs the aggregate's tier.
+   */
   async function execute(
     aggregateId: string,
     command: Cmd,
+    preCheck?: (state: IncidentState | null) => void,
   ): Promise<{ newEvents: IncidentEvent[]; nextState: IncidentState; newVersion: number }> {
     const { events: history, version: expectedVersion } = await loadEvents(deps.db, aggregateId);
-    const newEvents = command(fold(history));
+    const current = fold(history);
+    preCheck?.(current);
+    const newEvents = command(current);
     if (newEvents.length === 0) {
       // Every command in this service emits ≥ 1 event; an empty list would
       // mean a silent no-op the caller can't distinguish from success.
@@ -159,6 +169,13 @@ export function createHandlers(deps: Deps): IncidentV1.IncidentServiceServer {
   }
 
   function mapError(err: unknown): grpc.ServiceError {
+    if (err instanceof PermissionDeniedError) {
+      return Object.assign(new Error(err.message), {
+        code: grpc.status.PERMISSION_DENIED,
+        details: err.message,
+        metadata: new grpc.Metadata(),
+      });
+    }
     if (err instanceof InvariantError) {
       return Object.assign(new Error(err.message), {
         code: grpc.status.FAILED_PRECONDITION,
@@ -194,6 +211,13 @@ export function createHandlers(deps: Deps): IncidentV1.IncidentServiceServer {
           if (!call.request.location) {
             throw new InvariantError('location is required');
           }
+          // Defence in depth: re-check against the operator metadata the
+          // gateway attached. Trusted-internal callers (no headers) skip.
+          ensureAllowed(
+            readOperatorContext(call.metadata),
+            'open',
+            caslSubject('Incident', { tier }),
+          );
           const id = newId();
           const { nextState, newEvents, newVersion } = await execute(id, (state) =>
             open(state, {
@@ -220,12 +244,18 @@ export function createHandlers(deps: Deps): IncidentV1.IncidentServiceServer {
         try {
           const severity = fromProtoSeverity(call.request.severity);
           if (!severity) throw new InvariantError('severity is required');
-          const { nextState, newEvents, newVersion } = await execute(call.request.id, (state) =>
-            triage(state, {
-              severity,
-              triagedBy: call.request.triagedBy || 'unknown',
-              occurredAt: now(),
-            }),
+          const op = readOperatorContext(call.metadata);
+          const { nextState, newEvents, newVersion } = await execute(
+            call.request.id,
+            (state) =>
+              triage(state, {
+                severity,
+                triagedBy: call.request.triagedBy || 'unknown',
+                occurredAt: now(),
+              }),
+            (state) => {
+              if (state) ensureAllowed(op, 'triage', caslSubject('Incident', { tier: state.tier }));
+            },
           );
           await publishAll(
             call.request.id,
@@ -243,12 +273,19 @@ export function createHandlers(deps: Deps): IncidentV1.IncidentServiceServer {
     dispatch: (call, callback) => {
       void (async () => {
         try {
-          const { nextState, newEvents, newVersion } = await execute(call.request.id, (state) =>
-            dispatch(state, {
-              unitIds: call.request.unitIds,
-              dispatchedBy: call.request.dispatchedBy || 'unknown',
-              occurredAt: now(),
-            }),
+          const op = readOperatorContext(call.metadata);
+          const { nextState, newEvents, newVersion } = await execute(
+            call.request.id,
+            (state) =>
+              dispatch(state, {
+                unitIds: call.request.unitIds,
+                dispatchedBy: call.request.dispatchedBy || 'unknown',
+                occurredAt: now(),
+              }),
+            (state) => {
+              if (state)
+                ensureAllowed(op, 'dispatch', caslSubject('Incident', { tier: state.tier }));
+            },
           );
           await publishAll(
             call.request.id,
@@ -266,8 +303,14 @@ export function createHandlers(deps: Deps): IncidentV1.IncidentServiceServer {
     recordUnitArrival: (call, callback) => {
       void (async () => {
         try {
-          const { nextState, newEvents, newVersion } = await execute(call.request.id, (state) =>
-            recordUnitArrival(state, { unitId: call.request.unitId, occurredAt: now() }),
+          const op = readOperatorContext(call.metadata);
+          const { nextState, newEvents, newVersion } = await execute(
+            call.request.id,
+            (state) => recordUnitArrival(state, { unitId: call.request.unitId, occurredAt: now() }),
+            (state) => {
+              if (state)
+                ensureAllowed(op, 'recordArrival', caslSubject('Incident', { tier: state.tier }));
+            },
           );
           await publishAll(
             call.request.id,
@@ -285,8 +328,18 @@ export function createHandlers(deps: Deps): IncidentV1.IncidentServiceServer {
     resolve: (call, callback) => {
       void (async () => {
         try {
-          const { nextState, newEvents, newVersion } = await execute(call.request.id, (state) =>
-            resolve(state, { resolvedBy: call.request.resolvedBy || 'unknown', occurredAt: now() }),
+          const op = readOperatorContext(call.metadata);
+          const { nextState, newEvents, newVersion } = await execute(
+            call.request.id,
+            (state) =>
+              resolve(state, {
+                resolvedBy: call.request.resolvedBy || 'unknown',
+                occurredAt: now(),
+              }),
+            (state) => {
+              if (state)
+                ensureAllowed(op, 'resolve', caslSubject('Incident', { tier: state.tier }));
+            },
           );
           await publishAll(
             call.request.id,
@@ -304,12 +357,18 @@ export function createHandlers(deps: Deps): IncidentV1.IncidentServiceServer {
     cancel: (call, callback) => {
       void (async () => {
         try {
-          const { nextState, newEvents, newVersion } = await execute(call.request.id, (state) =>
-            cancel(state, {
-              reason: call.request.reason,
-              cancelledBy: call.request.cancelledBy || 'unknown',
-              occurredAt: now(),
-            }),
+          const op = readOperatorContext(call.metadata);
+          const { nextState, newEvents, newVersion } = await execute(
+            call.request.id,
+            (state) =>
+              cancel(state, {
+                reason: call.request.reason,
+                cancelledBy: call.request.cancelledBy || 'unknown',
+                occurredAt: now(),
+              }),
+            (state) => {
+              if (state) ensureAllowed(op, 'cancel', caslSubject('Incident', { tier: state.tier }));
+            },
           );
           await publishAll(
             call.request.id,

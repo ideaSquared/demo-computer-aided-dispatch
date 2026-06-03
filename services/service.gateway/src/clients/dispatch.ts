@@ -11,7 +11,7 @@ import * as grpc from '@grpc/grpc-js';
  * HTTP status).
  */
 export interface DispatchClient {
-  recommendUnits(req: RecommendUnitsRequest): Promise<RecommendUnitsResponse>;
+  recommendUnits(req: RecommendUnitsRequest, md?: grpc.Metadata): Promise<RecommendUnitsResponse>;
   close(): void;
 }
 
@@ -19,17 +19,23 @@ export function createDispatchClient(url: string): DispatchClient {
   const client = new DispatchV1.DispatchServiceClient(url, grpc.credentials.createInsecure());
 
   function call<TReq, TRes>(
-    fn: (req: TReq, cb: (err: grpc.ServiceError | null, res: TRes) => void) => unknown,
+    fn: (
+      req: TReq,
+      md: grpc.Metadata,
+      cb: (err: grpc.ServiceError | null, res: TRes) => void,
+    ) => unknown,
     req: TReq,
+    md: grpc.Metadata | undefined,
   ): Promise<TRes> {
+    const metadata = md ?? new grpc.Metadata();
     return new Promise((resolve, reject) => {
-      fn.call(client, req, (err, res) => (err ? reject(err) : resolve(res)));
+      fn.call(client, req, metadata, (err, res) => (err ? reject(err) : resolve(res)));
     });
   }
 
   return {
-    recommendUnits: (req) =>
-      call<RecommendUnitsRequest, RecommendUnitsResponse>(client.recommendUnits, req),
+    recommendUnits: (req, md) =>
+      call<RecommendUnitsRequest, RecommendUnitsResponse>(client.recommendUnits, req, md),
     close: () => client.close(),
   };
 }

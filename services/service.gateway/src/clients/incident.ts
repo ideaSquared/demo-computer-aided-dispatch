@@ -28,39 +28,50 @@ import * as grpc from '@grpc/grpc-js';
  * onto an HTTP status).
  */
 export interface IncidentClient {
-  open(req: OpenRequest): Promise<OpenResponse>;
-  triage(req: TriageRequest): Promise<TriageResponse>;
-  dispatch(req: DispatchRequest): Promise<DispatchResponse>;
-  recordUnitArrival(req: RecordUnitArrivalRequest): Promise<RecordUnitArrivalResponse>;
-  resolve(req: ResolveRequest): Promise<ResolveResponse>;
-  cancel(req: CancelRequest): Promise<CancelResponse>;
-  get(req: GetRequest): Promise<GetResponse>;
-  listOpen(req: ListOpenRequest): Promise<ListOpenResponse>;
+  open(req: OpenRequest, md?: grpc.Metadata): Promise<OpenResponse>;
+  triage(req: TriageRequest, md?: grpc.Metadata): Promise<TriageResponse>;
+  dispatch(req: DispatchRequest, md?: grpc.Metadata): Promise<DispatchResponse>;
+  recordUnitArrival(
+    req: RecordUnitArrivalRequest,
+    md?: grpc.Metadata,
+  ): Promise<RecordUnitArrivalResponse>;
+  resolve(req: ResolveRequest, md?: grpc.Metadata): Promise<ResolveResponse>;
+  cancel(req: CancelRequest, md?: grpc.Metadata): Promise<CancelResponse>;
+  get(req: GetRequest, md?: grpc.Metadata): Promise<GetResponse>;
+  listOpen(req: ListOpenRequest, md?: grpc.Metadata): Promise<ListOpenResponse>;
   close(): void;
 }
 
 export function createIncidentClient(url: string): IncidentClient {
   const client = new IncidentV1.IncidentServiceClient(url, grpc.credentials.createInsecure());
 
+  // Always pass metadata (even an empty one) so the call shape is uniform;
+  // the gateway attaches `x-operator-*` headers when a session is in hand.
   function call<TReq, TRes>(
-    fn: (req: TReq, cb: (err: grpc.ServiceError | null, res: TRes) => void) => unknown,
+    fn: (
+      req: TReq,
+      md: grpc.Metadata,
+      cb: (err: grpc.ServiceError | null, res: TRes) => void,
+    ) => unknown,
     req: TReq,
+    md: grpc.Metadata | undefined,
   ): Promise<TRes> {
+    const metadata = md ?? new grpc.Metadata();
     return new Promise((resolve, reject) => {
-      fn.call(client, req, (err, res) => (err ? reject(err) : resolve(res)));
+      fn.call(client, req, metadata, (err, res) => (err ? reject(err) : resolve(res)));
     });
   }
 
   return {
-    open: (req) => call<OpenRequest, OpenResponse>(client.open, req),
-    triage: (req) => call<TriageRequest, TriageResponse>(client.triage, req),
-    dispatch: (req) => call<DispatchRequest, DispatchResponse>(client.dispatch, req),
-    recordUnitArrival: (req) =>
-      call<RecordUnitArrivalRequest, RecordUnitArrivalResponse>(client.recordUnitArrival, req),
-    resolve: (req) => call<ResolveRequest, ResolveResponse>(client.resolve, req),
-    cancel: (req) => call<CancelRequest, CancelResponse>(client.cancel, req),
-    get: (req) => call<GetRequest, GetResponse>(client.get, req),
-    listOpen: (req) => call<ListOpenRequest, ListOpenResponse>(client.listOpen, req),
+    open: (req, md) => call<OpenRequest, OpenResponse>(client.open, req, md),
+    triage: (req, md) => call<TriageRequest, TriageResponse>(client.triage, req, md),
+    dispatch: (req, md) => call<DispatchRequest, DispatchResponse>(client.dispatch, req, md),
+    recordUnitArrival: (req, md) =>
+      call<RecordUnitArrivalRequest, RecordUnitArrivalResponse>(client.recordUnitArrival, req, md),
+    resolve: (req, md) => call<ResolveRequest, ResolveResponse>(client.resolve, req, md),
+    cancel: (req, md) => call<CancelRequest, CancelResponse>(client.cancel, req, md),
+    get: (req, md) => call<GetRequest, GetResponse>(client.get, req, md),
+    listOpen: (req, md) => call<ListOpenRequest, ListOpenResponse>(client.listOpen, req, md),
     close: () => client.close(),
   };
 }

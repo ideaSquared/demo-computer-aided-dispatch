@@ -1,8 +1,10 @@
+import { subject as caslSubject, PermissionDeniedError } from '@cad/lib.authz';
 import type { RecommendedUnit, Unit } from '@cad/proto';
 import { DispatchV1, IncidentV1, ResourceV1 } from '@cad/proto';
 import * as grpc from '@grpc/grpc-js';
 import { type Candidate, type LatLng, rankByDistance } from '../recommend.js';
 import type { IncidentReader, ResourceReader } from './clients.js';
+import { ensureAllowed, readOperatorContext } from './operator.js';
 
 interface Deps {
   incident: IncidentReader;
@@ -26,6 +28,13 @@ export function createHandlers(deps: Deps): DispatchV1.DispatchServiceServer {
   const defaultLimit = deps.defaultLimit ?? 5;
 
   function mapError(err: unknown): grpc.ServiceError {
+    if (err instanceof PermissionDeniedError) {
+      return Object.assign(new Error(err.message), {
+        code: grpc.status.PERMISSION_DENIED,
+        details: err.message,
+        metadata: new grpc.Metadata(),
+      });
+    }
     // Pass an upstream gRPC status (e.g. incident NOT_FOUND) through unchanged
     // so the gateway maps it to the right HTTP status; otherwise INTERNAL.
     if (isServiceError(err)) {
@@ -60,6 +69,15 @@ export function createHandlers(deps: Deps): DispatchV1.DispatchServiceServer {
               details: `incident '${incidentId}' not found`,
               metadata: new grpc.Metadata(),
             });
+          }
+
+          // Defence in depth: now that we know the incident's tier, re-check
+          // the operator's ability to `recommend` against it. Trusted-
+          // internal callers (no operator metadata) skip the check.
+          const op = readOperatorContext(call.metadata);
+          const incidentTier = INCIDENT_TIER_TO_LIBAUTHZ[incident.tier];
+          if (incidentTier) {
+            ensureAllowed(op, 'recommend', caslSubject('Incident', { tier: incidentTier }));
           }
 
           // 2. List available units in the incident's tier. One round-trip;
@@ -117,6 +135,16 @@ const INCIDENT_TIER_TO_RESOURCE: Record<IncidentV1.ServiceTier, ResourceV1.Servi
   [IncidentV1.ServiceTier.POLICE]: ResourceV1.ServiceTier.POLICE,
   [IncidentV1.ServiceTier.MEDICAL]: ResourceV1.ServiceTier.MEDICAL,
   [IncidentV1.ServiceTier.FIRE]: ResourceV1.ServiceTier.FIRE,
+};
+
+const INCIDENT_TIER_TO_LIBAUTHZ: Record<
+  IncidentV1.ServiceTier,
+  'police' | 'medical' | 'fire' | null
+> = {
+  [IncidentV1.ServiceTier.UNSPECIFIED]: null,
+  [IncidentV1.ServiceTier.POLICE]: 'police',
+  [IncidentV1.ServiceTier.MEDICAL]: 'medical',
+  [IncidentV1.ServiceTier.FIRE]: 'fire',
 };
 
 function incidentTierToResource(t: IncidentV1.ServiceTier): ResourceV1.ServiceTier {

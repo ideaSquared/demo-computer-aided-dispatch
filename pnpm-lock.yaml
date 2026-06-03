@@ -425,6 +425,9 @@ importers:
       '@cad/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@cad/lib.authz':
+        specifier: workspace:*
+        version: link:../../packages/lib.authz
       '@cad/observability':
         specifier: workspace:*
         version: link:../../packages/observability
@@ -468,6 +471,9 @@ importers:
       '@cad/events':
         specifier: workspace:*
         version: link:../../packages/events
+      '@cad/lib.authz':
+        specifier: workspace:*
+        version: link:../../packages/lib.authz
       '@cad/observability':
         specifier: workspace:*
         version: link:../../packages/observability
@@ -477,6 +483,9 @@ importers:
       '@cad/redis':
         specifier: workspace:*
         version: link:../../packages/redis
+      '@casl/ability':
+        specifier: ^6.7.3
+        version: 6.8.1
       '@fastify/websocket':
         specifier: ^11.0.1
         version: 11.2.0
@@ -557,6 +566,9 @@ importers:
       '@cad/events':
         specifier: workspace:*
         version: link:../../packages/events
+      '@cad/lib.authz':
+        specifier: workspace:*
+        version: link:../../packages/lib.authz
       '@cad/observability':
         specifier: workspace:*
         version: link:../../packages/observability
@@ -652,6 +664,9 @@ importers:
       '@cad/events':
         specifier: workspace:*
         version: link:../../packages/events
+      '@cad/lib.authz':
+        specifier: workspace:*
+        version: link:../../packages/lib.authz
       '@cad/observability':
         specifier: workspace:*
         version: link:../../packages/observability

@@ -2,7 +2,7 @@
 
 > **One-liner:** BFF + WebSocket terminator + RBAC enforcement at the edge.
 
-Node + Fastify service scaffolded by `pnpm new-service` (PR 2) and stubbed in PR 3.
+Node + Fastify. Owns the public HTTP surface, the WebSocket spine, and the CASL gate that fronts every restricted route.
 
 ## Notion PRD
 
@@ -12,16 +12,29 @@ The canonical product/architecture spec is the Notion page:
 
 Notion is the source of truth. This README is a navigation aid only.
 
-## Status (PR 3)
+## Identity & enforcement
 
-Stub. HTTP `/health` only. Boot-proven by `pnpm smoke`. Domain logic, gRPC handlers, DB migrations, and NATS subscribers land in subsequent PRs against the PRD.
+The Phase-1 `?operator=&tier=&name=` URL stub is **gone**. The gateway now validates an access token via `service.auth.ValidateToken` and re-builds the operator's CASL ability from the returned `ability_json` (raw rules array, un-pickled with `createMongoAbility`).
+
+Two surfaces:
+
+- **HTTP** — `Authorization: Bearer <accessToken>`.
+- **WebSocket** — `?token=<accessToken>` query parameter (browsers can't attach `Authorization` headers to native WebSocket connects).
+
+Every restricted route + WS `subscribe` is gated by `session.ability.can(action, subject)`. On deny the gateway returns 403 (HTTP) or `{type:'error', code:'forbidden'}` (WS) AND publishes `audit.actionTaken{outcome:'denied'}` to NATS. Each owning service (incident / resource / dispatch) does a **defence-in-depth re-check** against the `x-operator-{id,tier,roles}` gRPC metadata the gateway attaches.
+
+### `DEV_AUTH_BYPASS`
+
+For the duration of the Phase-4 transition the gateway accepts unauthenticated requests when `DEV_AUTH_BYPASS=true` (the demo-friendly default in both compose files). Unauthenticated requests get a synthesised supervisor session so every existing smoke + the console URL stub keep working. Production deployments set `DEV_AUTH_BYPASS=false`; the gateway then 401s any request without a valid bearer token.
+
+The dev role-switcher UI (PR #3) builds on `service.auth /dev/login` to mint a real token, after which the bypass becomes optional.
 
 ## Dev
 
 ```bash
 pnpm dev:deps                                # Postgres + Redis + NATS + Jaeger
-pnpm --filter @cad/service.gateway dev         # watch mode (tsx), port 5000
-curl http://localhost:5000/health           # → { "status": "ok" }
+pnpm --filter @cad/service.gateway dev       # watch mode (tsx), port 5000
+curl http://localhost:5000/health            # → { "status": "ok" }
 ```
 
 ## Build

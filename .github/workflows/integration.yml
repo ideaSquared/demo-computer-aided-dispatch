@@ -20,6 +20,7 @@ on:
       - "tools/scripts/recommend-smoke.ts"
       - "tools/scripts/lifecycle-smoke.ts"
       - "tools/scripts/auth-smoke.ts"
+      - "tools/scripts/enforce-smoke.ts"
       - ".dockerignore"
 
 concurrency:
@@ -101,6 +102,11 @@ jobs:
       # same core as the gRPC AuthService.
       - name: Auth smoke
         run: pnpm smoke:auth
+      # Phase 4 enforcement: call_handler is denied dispatch (headline
+      # gate), a fire dispatcher succeeds, a police dispatcher is denied
+      # cross-tier, and an observer can list but not triage.
+      - name: Enforcement smoke (gateway CASL gate)
+        run: pnpm smoke:enforce
       - name: Dump container logs on failure
         if: failure()
         run: |
@@ -201,6 +207,9 @@ jobs:
       # same core as the gRPC AuthService.
       - name: Auth smoke
         run: pnpm smoke:auth
+      # Phase 4 enforcement: dispatch gate, tier scope, observer read-only.
+      - name: Enforcement smoke (gateway CASL gate)
+        run: pnpm smoke:enforce
       - name: Dump container logs on failure
         if: failure()
         run: |

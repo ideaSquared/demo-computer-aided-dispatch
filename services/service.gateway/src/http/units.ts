@@ -3,6 +3,7 @@ import * as grpc from '@grpc/grpc-js';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import type { ResourceClient } from '../clients/resource.js';
+import { emitAudit, type GateDeps, operatorMetadata, requireAbility } from './gate.js';
 
 /**
  * HTTP command path for units (the responder fleet). Routes are thin:
@@ -72,9 +73,11 @@ interface UnitJson {
 function toJson(unit: Unit): UnitJson {
   const tier = PROTO_TO_TIER[unit.tier];
   const status = PROTO_TO_STATUS[unit.status];
-  if (tier === null || status === null) {
+  if (!tier || !status) {
     // The resource service never emits UNSPECIFIED on a persisted unit; treat
-    // it as an upstream contract violation rather than guessing.
+    // it as an upstream contract violation rather than guessing. The truthy
+    // check rules out both `null` (UNSPECIFIED) and `undefined` (every
+    // Record lookup gets `| undefined` from noUncheckedIndexedAccess).
     throw new Error('resource service returned an unspecified tier or status');
   }
   return {
@@ -128,6 +131,8 @@ const GRPC_STATUS_TO_HTTP: Partial<Record<grpc.status, number>> = {
   [grpc.status.FAILED_PRECONDITION]: 409,
   [grpc.status.ABORTED]: 409,
   [grpc.status.INVALID_ARGUMENT]: 400,
+  [grpc.status.UNAUTHENTICATED]: 401,
+  [grpc.status.PERMISSION_DENIED]: 403,
 };
 
 function replyError(reply: FastifyReply, err: unknown): FastifyReply {
@@ -149,18 +154,36 @@ function replyValidation(reply: FastifyReply, err: z.ZodError): FastifyReply {
 
 // --- plugin ----------------------------------------------------------------
 
-export function registerUnitRoutes(app: FastifyInstance, client: ResourceClient): void {
+export function registerUnitRoutes(
+  app: FastifyInstance,
+  client: ResourceClient,
+  gate: GateDeps,
+): void {
   app.post('/api/units', async (req, reply) => {
     const body = RegisterBodySchema.safeParse(req.body);
     if (!body.success) return replyValidation(reply, body.error);
+    const session = await requireAbility(req, reply, gate, 'manageFleet', {
+      kind: 'Unit',
+      tier: body.data.tier,
+    });
+    if (!session) return reply;
     try {
-      const res = await client.registerUnit({
-        callsign: body.data.callsign,
-        tier: TIER_TO_PROTO[body.data.tier],
-        location: body.data.location,
-        registeredBy: body.data.registeredBy ?? '',
-      });
+      const res = await client.registerUnit(
+        {
+          callsign: body.data.callsign,
+          tier: TIER_TO_PROTO[body.data.tier],
+          location: body.data.location,
+          registeredBy: session.operator.id,
+        },
+        operatorMetadata(session),
+      );
       if (!res.unit) throw new Error('resource service returned no unit');
+      await emitAudit(gate, session, 'manageFleet', { kind: 'Unit', id: res.unit.id }, 'success', {
+        route: 'POST /api/units',
+        tier: body.data.tier,
+      }).catch(() => {
+        /* best-effort */
+      });
       return reply.code(201).send({ unit: toJson(res.unit) });
     } catch (err) {
       return replyError(reply, err);
@@ -170,13 +193,28 @@ export function registerUnitRoutes(app: FastifyInstance, client: ResourceClient)
   app.get('/api/units', async (req, reply) => {
     const query = ListQuerySchema.safeParse(req.query);
     if (!query.success) return replyValidation(reply, query.error);
+    // Same shape as the unscoped incident list: bare `Unit` subject when no
+    // `?tier=` filter is supplied so observers (tier-scoped view) pass; with
+    // a `?tier=` filter, gate against that tier explicitly.
+    const session = query.data.tier
+      ? await requireAbility(req, reply, gate, 'view', {
+          kind: 'Unit',
+          tier: query.data.tier,
+        })
+      : await requireAbility(req, reply, gate, 'view', { kind: 'Unit' });
+    if (!session) return reply;
     try {
-      const res = await client.listUnits({
-        tier: query.data.tier ? TIER_TO_PROTO[query.data.tier] : ResourceV1.ServiceTier.UNSPECIFIED,
-        status: query.data.status
-          ? STATUS_TO_PROTO[query.data.status]
-          : ResourceV1.UnitStatus.UNSPECIFIED,
-      });
+      const res = await client.listUnits(
+        {
+          tier: query.data.tier
+            ? TIER_TO_PROTO[query.data.tier]
+            : ResourceV1.ServiceTier.UNSPECIFIED,
+          status: query.data.status
+            ? STATUS_TO_PROTO[query.data.status]
+            : ResourceV1.UnitStatus.UNSPECIFIED,
+        },
+        operatorMetadata(session),
+      );
       return reply.send({ units: res.units.map(toJson) });
     } catch (err) {
       return replyError(reply, err);
@@ -186,8 +224,10 @@ export function registerUnitRoutes(app: FastifyInstance, client: ResourceClient)
   app.get('/api/units/:id', async (req, reply) => {
     const params = IdParamsSchema.safeParse(req.params);
     if (!params.success) return replyValidation(reply, params.error);
+    const session = await requireAbility(req, reply, gate, 'view', { kind: 'Unit' });
+    if (!session) return reply;
     try {
-      const res = await client.getUnit({ id: params.data.id });
+      const res = await client.getUnit({ id: params.data.id }, operatorMetadata(session));
       if (!res.unit) throw new Error('resource service returned no unit');
       return reply.send({ unit: toJson(res.unit) });
     } catch (err) {
@@ -200,15 +240,51 @@ export function registerUnitRoutes(app: FastifyInstance, client: ResourceClient)
     if (!params.success) return replyValidation(reply, params.error);
     const body = StatusBodySchema.safeParse(req.body);
     if (!body.success) return replyValidation(reply, body.error);
+    // Fetch the unit's tier so the CASL check is scoped properly. A
+    // responder may only set status on units in `assignedUnitIds`; we don't
+    // have that yet, so the responder gate currently passes only at the
+    // owning service (which has the assignment data).
+    let unitTier: WireTier | null;
     try {
-      const res = await client.updateStatus({
-        id: params.data.id,
-        status: STATUS_TO_PROTO[body.data.status],
-        incidentId: body.data.incidentId ?? '',
-        expectedVersion: body.data.expectedVersion ?? 0,
-        changedBy: body.data.changedBy ?? '',
-      });
+      const existing = await client.getUnit({ id: params.data.id });
+      if (!existing.unit) throw new Error('resource service returned no unit');
+      unitTier = PROTO_TO_TIER[existing.unit.tier] ?? null;
+    } catch (err) {
+      return replyError(reply, err);
+    }
+    if (unitTier === null) {
+      return reply
+        .code(404)
+        .send({ error: { code: 'NOT_FOUND', message: `unit '${params.data.id}' not found` } });
+    }
+    const session = await requireAbility(req, reply, gate, 'setUnitStatus', {
+      kind: 'Unit',
+      tier: unitTier,
+      id: params.data.id,
+    });
+    if (!session) return reply;
+    try {
+      const res = await client.updateStatus(
+        {
+          id: params.data.id,
+          status: STATUS_TO_PROTO[body.data.status],
+          incidentId: body.data.incidentId ?? '',
+          expectedVersion: body.data.expectedVersion ?? 0,
+          changedBy: session.operator.id,
+        },
+        operatorMetadata(session),
+      );
       if (!res.unit) throw new Error('resource service returned no unit');
+      await emitAudit(
+        gate,
+        session,
+        'setUnitStatus',
+        { kind: 'Unit', id: params.data.id },
+        'success',
+        { status: body.data.status },
+      ).catch(() => {
+        /* best-effort */
+      });
       return reply.send({ unit: toJson(res.unit) });
     } catch (err) {
       return replyError(reply, err);

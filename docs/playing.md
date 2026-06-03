@@ -96,6 +96,32 @@ The console subscribes to the `incidents` topic over WebSocket; the incident
 service publishes each state change after it commits, and the notification
 service fans it out to every connected console.
 
+## Switch role mid-session
+
+The Phase 4 gateway accepts a real JWT from `service.auth` —
+`Authorization: Bearer <token>` for HTTP and `?token=<jwt>` for the WS.
+Mint one against any seeded operator and reload the console pointed at it:
+
+```bash
+TOKEN=$(curl -s http://localhost:5010/dev/login \
+  -H 'content-type: application/json' \
+  -d '{"email":"dispatch.fire@cad.local","password":"dev"}' \
+  | jq -r .accessToken)
+
+# Open the console at http://localhost:3000/?token=$TOKEN
+# The HTTP gating reads the Bearer header automatically; the WS reads ?token.
+```
+
+A `ch.fire@cad.local` token can open + triage but
+`POST /api/incidents/:id/dispatch` will 403 — the headline gate. A
+`dispatch.<tier>` token of the same tier as the incident will succeed; a
+different tier still 403s. The polished dev role-switcher UI (PR #3) wraps
+this in a one-click chooser; for now `curl /dev/login` is enough to play
+with the gate live.
+
+The Phase-1 `?operator=&tier=` URL identity stub still works while
+`DEV_AUTH_BYPASS=true` in compose (the demo-friendly default).
+
 ## Troubleshooting
 
 - **`Bind for 0.0.0.0:5432 failed: port is already allocated`** — another

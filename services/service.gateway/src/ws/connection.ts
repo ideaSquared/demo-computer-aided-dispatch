@@ -1,9 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import { type NatsConnection, publish, subjects } from '@cad/events';
+import { AuditActionTakenSchema } from '@cad/events/audit';
 import { PresenceChangedSchema } from '@cad/events/presence';
 import type { WebSocket } from '@fastify/websocket';
 import type { FastifyBaseLogger, FastifyRequest } from 'fastify';
-import { canSubscribe, type Session } from '../auth.js';
+import { authenticate, bypassFromUrl, canSubscribe, type Session } from '../auth.js';
+import type { AuthClient } from '../clients/auth.js';
 import type { Forwarder } from './forwarder.js';
 import { ClientMessageSchema, type ServerMessage } from './protocol.js';
 import type { TopicRegistry } from './registry.js';
@@ -15,21 +17,65 @@ function send(socket: WebSocket, msg: ServerMessage): void {
 }
 
 /**
- * Phase 1 identity: from query params `?operator=&tier=&name=`. No auth
- * — Phase 4 swaps this for a Lucia session lookup off the cookie/JWT.
- * Tier defaults to 'police' to keep the dev URL short.
+ * Resolve a Session from a WS connect request. The token comes in as
+ * `?token=<jwt>` (URL query, because browsers can't attach Authorization
+ * headers to the native WebSocket constructor). When `DEV_AUTH_BYPASS=true`
+ * and no token is supplied, fall through to the Phase-1 URL stub for the
+ * existing smokes.
  */
-function readSession(req: FastifyRequest, log: FastifyBaseLogger): Session | null {
-  const q = req.query as Record<string, string | undefined>;
-  const operatorId = q.operator?.trim();
-  if (!operatorId) {
-    log.warn('rejecting WS connection: missing ?operator');
-    return null;
+async function readSession(
+  req: FastifyRequest,
+  authClient: AuthClient,
+  devAuthBypass: boolean,
+  log: FastifyBaseLogger,
+): Promise<Session | null> {
+  const q = (req.query ?? {}) as Record<string, string | string[] | undefined>;
+  const tokenRaw = q.token;
+  const token = Array.isArray(tokenRaw) ? tokenRaw[0] : tokenRaw;
+  if (typeof token === 'string' && token.length > 0) {
+    const session = await authenticate(authClient, token);
+    if (!session) {
+      log.warn('rejecting WS connection: invalid access token');
+      return null;
+    }
+    return session;
   }
-  const tierRaw = q.tier?.trim();
-  const tier = tierRaw === 'medical' || tierRaw === 'fire' ? tierRaw : ('police' as const);
-  const displayName = q.name?.trim() ?? operatorId;
-  return { operatorId, displayName, tier };
+  if (devAuthBypass) {
+    return bypassFromUrl(q);
+  }
+  log.warn('rejecting WS connection: no token and DEV_AUTH_BYPASS=false');
+  return null;
+}
+
+/**
+ * Best-effort audit publish for the WS path. Failures are logged but never
+ * thrown — a NATS hiccup must not break the WS frame loop.
+ */
+function emitWsAudit(
+  nats: NatsConnection,
+  session: Session,
+  action: string,
+  outcome: 'denied' | 'success',
+  metadata: Record<string, unknown>,
+  log: FastifyBaseLogger,
+): void {
+  const payload = {
+    eventId: randomUUID(),
+    occurredAt: new Date().toISOString(),
+    idempotencyKey: `audit:ws:${session.accessTokenId}:${action}:${outcome}:${Date.now()}`,
+    actor: {
+      id: session.operator.id,
+      tier: session.operator.tier,
+      roles: [...session.operator.roles],
+    },
+    action,
+    subject: { kind: 'Operator' as const, id: session.operator.id },
+    outcome,
+    metadata,
+  };
+  publish({ nats }, subjects.AuditActionTaken, AuditActionTakenSchema, payload).catch((err) => {
+    log.warn({ err, action }, 'failed to publish ws audit event');
+  });
 }
 
 export function makeConnectionHandler(opts: {
@@ -37,90 +83,103 @@ export function makeConnectionHandler(opts: {
   registry: TopicRegistry;
   forwarder: Forwarder;
   log: FastifyBaseLogger;
+  authClient: AuthClient;
+  devAuthBypass: boolean;
 }) {
-  const { nats, registry, forwarder, log } = opts;
+  const { nats, registry, forwarder, log, authClient, devAuthBypass } = opts;
 
   return (socket: WebSocket, req: FastifyRequest) => {
-    const session = readSession(req, log);
-    if (!session) {
-      send(socket, { type: 'error', code: 'unauthorized', message: 'missing operator' });
-      socket.close(1008, 'unauthorized');
-      return;
-    }
-    log.info({ operatorId: session.operatorId }, 'ws connected');
-
-    // Heartbeat. Native WebSocket pings keep the TCP path warm AND let us
-    // detect dead peers within 2× the interval (no pong → terminate).
-    let alive = true;
-    socket.on('pong', () => {
-      alive = true;
-    });
-    const heartbeat = setInterval(() => {
-      if (!alive) {
-        log.warn({ operatorId: session.operatorId }, 'ws heartbeat timeout — terminating');
-        socket.terminate();
+    void (async () => {
+      const session = await readSession(req, authClient, devAuthBypass, log);
+      if (!session) {
+        send(socket, { type: 'error', code: 'unauthorized', message: 'invalid or missing token' });
+        socket.close(1008, 'unauthorized');
         return;
       }
-      alive = false;
-      socket.ping();
-    }, HEARTBEAT_MS);
+      log.info({ operatorId: session.operator.id }, 'ws connected');
 
-    socket.on('message', (raw: Buffer) => {
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(raw.toString());
-      } catch {
-        send(socket, { type: 'error', code: 'bad_json' });
-        return;
-      }
-      const result = ClientMessageSchema.safeParse(parsed);
-      if (!result.success) {
-        send(socket, { type: 'error', code: 'bad_message' });
-        return;
-      }
-      const msg = result.data;
-
-      if (msg.type === 'subscribe') {
-        if (!canSubscribe(session, msg.topic)) {
-          send(socket, { type: 'error', code: 'forbidden', message: msg.topic });
+      // Heartbeat. Native WebSocket pings keep the TCP path warm AND let us
+      // detect dead peers within 2× the interval (no pong → terminate).
+      let alive = true;
+      socket.on('pong', () => {
+        alive = true;
+      });
+      const heartbeat = setInterval(() => {
+        if (!alive) {
+          log.warn({ operatorId: session.operator.id }, 'ws heartbeat timeout — terminating');
+          socket.terminate();
           return;
         }
-        registry.add(socket, msg.topic);
-        return;
-      }
-      if (msg.type === 'unsubscribe') {
-        registry.remove(socket, msg.topic);
-        return;
-      }
-      if (msg.command === 'setStatus') {
-        const event = {
-          eventId: randomUUID(),
-          occurredAt: new Date().toISOString(),
-          idempotencyKey: `${session.operatorId}:${msg.status}:${Date.now()}`,
-          operatorId: session.operatorId,
-          displayName: session.displayName,
-          tier: session.tier,
-          status: msg.status,
-        };
-        publish({ nats }, subjects.PresenceChanged, PresenceChangedSchema, event).catch((err) => {
-          log.error({ err, operatorId: session.operatorId }, 'failed to publish presence.changed');
-          send(socket, { type: 'error', code: 'publish_failed' });
-        });
-      }
-    });
+        alive = false;
+        socket.ping();
+      }, HEARTBEAT_MS);
 
-    socket.on('close', () => {
-      clearInterval(heartbeat);
-      registry.removeSocket(socket);
-      log.info({ operatorId: session.operatorId }, 'ws closed');
-    });
-    socket.on('error', (err: Error) => {
-      log.warn({ err, operatorId: session.operatorId }, 'ws error');
-    });
+      socket.on('message', (raw: Buffer) => {
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(raw.toString());
+        } catch {
+          send(socket, { type: 'error', code: 'bad_json' });
+          return;
+        }
+        const result = ClientMessageSchema.safeParse(parsed);
+        if (!result.success) {
+          send(socket, { type: 'error', code: 'bad_message' });
+          return;
+        }
+        const msg = result.data;
 
-    // Subscribe the operator to their own topic by default; client can
-    // subscribe to 'presence' explicitly for the roster view.
-    registry.add(socket, `operator:${session.operatorId}`);
-    void forwarder; // forwarder is wired via the registry callbacks
+        if (msg.type === 'subscribe') {
+          if (!canSubscribe(session, msg.topic)) {
+            // Audit the deny, then tell the client.
+            emitWsAudit(nats, session, 'ws.subscribe', 'denied', { topic: msg.topic }, log);
+            send(socket, { type: 'error', code: 'forbidden', message: msg.topic });
+            return;
+          }
+          registry.add(socket, msg.topic);
+          return;
+        }
+        if (msg.type === 'unsubscribe') {
+          registry.remove(socket, msg.topic);
+          return;
+        }
+        if (msg.command === 'setStatus') {
+          // Presence setStatus is currently treated as authenticated-user
+          // level (no extra CASL gate) so the Phase-1 presence demo keeps
+          // working. The dispatch / unit-status command paths are HTTP, not
+          // WS — those are gated separately.
+          const event = {
+            eventId: randomUUID(),
+            occurredAt: new Date().toISOString(),
+            idempotencyKey: `${session.operator.id}:${msg.status}:${Date.now()}`,
+            operatorId: session.operator.id,
+            displayName: session.operator.displayName,
+            tier: session.operator.tier,
+            status: msg.status,
+          };
+          publish({ nats }, subjects.PresenceChanged, PresenceChangedSchema, event).catch((err) => {
+            log.error(
+              { err, operatorId: session.operator.id },
+              'failed to publish presence.changed',
+            );
+            send(socket, { type: 'error', code: 'publish_failed' });
+          });
+        }
+      });
+
+      socket.on('close', () => {
+        clearInterval(heartbeat);
+        registry.removeSocket(socket);
+        log.info({ operatorId: session.operator.id }, 'ws closed');
+      });
+      socket.on('error', (err: Error) => {
+        log.warn({ err, operatorId: session.operator.id }, 'ws error');
+      });
+
+      // Subscribe the operator to their own topic by default; client can
+      // subscribe to 'presence' explicitly for the roster view.
+      registry.add(socket, `operator:${session.operator.id}`);
+      void forwarder; // forwarder is wired via the registry callbacks
+    })();
   };
 }

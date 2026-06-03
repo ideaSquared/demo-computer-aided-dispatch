@@ -23,6 +23,12 @@ services:
       INCIDENT_GRPC_URL: service-incident:5021
       RESOURCE_GRPC_URL: service-resource:5041
       DISPATCH_GRPC_URL: service-dispatch:5031
+      AUTH_GRPC_URL: service-auth:5011
+      # Demo-friendly default for now — unauthenticated requests get a
+      # synthesised supervisor session so the existing smokes keep working.
+      # Production sets this false; the gateway then requires a real
+      # access token issued by service.auth. See services/service.gateway/README.md.
+      DEV_AUTH_BYPASS: "true"
     depends_on:
       postgres:
         condition: service_healthy
