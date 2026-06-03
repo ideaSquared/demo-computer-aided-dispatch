@@ -17,6 +17,16 @@
  */
 
 export type {
+  AuditActor,
+  AuditEvent,
+  AuditTarget,
+  GetByTargetRequest,
+  GetByTargetResponse,
+  QueryRequest,
+  QueryResponse,
+} from '../gen/ts/cad/audit/v1/audit.js';
+export * as AuditV1 from '../gen/ts/cad/audit/v1/audit.js';
+export type {
   ListSeededOperatorsRequest,
   ListSeededOperatorsResponse,
   LoginRequest,

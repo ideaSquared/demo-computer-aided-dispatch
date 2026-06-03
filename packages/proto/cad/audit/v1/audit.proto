@@ -1,0 +1,119 @@
+// service.audit — append-only event store + query API.
+//
+// The wire is read-only by design: writes flow exclusively through the
+// `audit.actionTaken` NATS subject (the gateway publishes; this service is
+// the only consumer). Supervisors / admins call `Query` and `GetByTarget`
+// to investigate operator activity and per-incident history.
+//
+// Each RPC has its own Request/Response wrapper so individual methods can
+// grow fields without forcing a v2 (buf STANDARD enforces this). The
+// `AuditEvent` payload mirrors the persisted row 1:1.
+//
+// See the Notion PRD:
+//   https://www.notion.so/37389ffb19fc81c38503e414e43fc546
+
+syntax = "proto3";
+
+package cad.audit.v1;
+
+import "cad/common/v1/health.proto";
+import "google/protobuf/empty.proto";
+
+service AuditQueryService {
+  // Filtered keyset-paginated query. Every filter is optional; the empty
+  // request returns the most recent `limit` events globally (capped). The
+  // `cursor` is opaque (base64 JSON of the last (occurred_at, event_id)
+  // pair) — callers don't construct one, they round-trip whatever the
+  // server returned.
+  rpc Query(QueryRequest) returns (QueryResponse);
+
+  // Convenience: full history for a target (incident / unit / operator /
+  // session). Ordered oldest → newest so the caller can render a timeline
+  // without reversing.
+  rpc GetByTarget(GetByTargetRequest) returns (GetByTargetResponse);
+
+  // Mirrors the gRPC standard health probe — every CAD gRPC service
+  // surfaces one for grpcurl-style readiness checks.
+  rpc Health(google.protobuf.Empty) returns (cad.common.v1.CheckResponse);
+}
+
+// ---- requests --------------------------------------------------------------
+
+message QueryRequest {
+  // All filters are optional. Empty string = unset (no whitespace trimming
+  // server-side; the gateway is responsible for normalising query params).
+  string actor_id = 1;
+  string target_kind = 2;   // 'Incident' | 'Unit' | 'Operator' | 'Session'
+  string target_id = 3;
+  string action = 4;        // exact match, e.g. 'incident.dispatch'
+  string from = 5;          // RFC3339 lower bound, inclusive
+  string to = 6;            // RFC3339 upper bound, exclusive
+  // Opaque pagination cursor (base64-JSON of the last row's
+  // (occurred_at, event_id)). Re-use whatever the server returned.
+  string cursor = 7;
+  // 0 / negative → default (50). Server caps at 200.
+  int32 limit = 8;
+}
+
+message GetByTargetRequest {
+  string target_kind = 1;   // required
+  string target_id = 2;     // required
+  // 0 / negative → default (200). No cursor — a single target's history
+  // is small enough not to need it for the demo (PRD calls retention /
+  // partitioning out of scope here).
+  int32 limit = 3;
+}
+
+// ---- responses -------------------------------------------------------------
+
+message QueryResponse {
+  repeated AuditEvent events = 1;
+  // Empty when the page returned fewer rows than `limit`. Round-trip
+  // verbatim to fetch the next page.
+  string next_cursor = 2;
+}
+
+message GetByTargetResponse {
+  repeated AuditEvent events = 1;
+}
+
+// ---- domain shape ----------------------------------------------------------
+
+// Mirrors the audit.audit_events row. `occurred_at` and `received_at` are
+// RFC3339 strings on the wire (envelope timestamps stay strings — same
+// convention as IncidentService).
+message AuditEvent {
+  string event_id = 1;
+  string occurred_at = 2;
+  string received_at = 3;
+  AuditActor actor = 4;
+  string action = 5;
+  AuditTarget target = 6;
+  Outcome outcome = 7;
+  // JSON-encoded `metadata` (small free-form record the producer dropped:
+  // route, method, deny reason, etc.). Kept as a string on the wire so the
+  // proto contract is independent of the producer's schema.
+  string metadata_json = 8;
+  string idempotency_key = 9;
+}
+
+message AuditActor {
+  string id = 1;
+  string tier = 2;          // 'police' | 'medical' | 'fire'
+  repeated string roles = 3;
+}
+
+message AuditTarget {
+  string kind = 1;          // 'Incident' | 'Unit' | 'Operator' | 'Session'
+  // Empty string when the action had no target id (e.g. list / view-roster).
+  string id = 2;
+}
+
+// ---- enums -----------------------------------------------------------------
+
+enum Outcome {
+  OUTCOME_UNSPECIFIED = 0;
+  OUTCOME_SUCCESS = 1;
+  OUTCOME_DENIED = 2;
+  OUTCOME_FAILED = 3;
+}

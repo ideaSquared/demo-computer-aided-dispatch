@@ -49,6 +49,7 @@ services:
       RESOURCE_GRPC_URL: service-resource:5041
       DISPATCH_GRPC_URL: service-dispatch:5031
       AUTH_GRPC_URL: service-auth:5011
+      AUDIT_GRPC_URL: service-audit:5091
       # Demo-friendly default — see infra/docker-compose.yml for the policy.
       DEV_AUTH_BYPASS: "true"
     develop:
@@ -170,12 +171,14 @@ services:
   service-audit:
     <<: *dev-build
     command: pnpm --filter @cad/service.audit dev
-    ports: ["5070:5070"]
+    ports: ["5090:5090", "5091:5091"]
     environment:
       <<: *dev-env
-      PORT: "5070"
+      PORT: "5090"
+      GRPC_PORT: "5091"
       DATABASE_URL: postgres://cad:cad@postgres:5432/cad
       DB_SCHEMA: audit
+      MIGRATE_ON_BOOT: "true"
     develop:
       watch:
         - { action: sync, path: ../services/service.audit/src, target: /app/services/service.audit/src }

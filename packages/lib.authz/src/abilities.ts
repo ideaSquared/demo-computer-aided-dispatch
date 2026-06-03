@@ -28,7 +28,7 @@ export type Action =
   | 'manage';
 
 /** Subject type names. */
-export type SubjectName = 'Incident' | 'Unit' | 'Operator' | 'Session';
+export type SubjectName = 'Incident' | 'Unit' | 'Operator' | 'Session' | 'Audit';
 
 /**
  * Subjects actions apply to: a bare type name (for type-level checks and rule
@@ -96,7 +96,8 @@ export function defineAbilitiesFor(ctx: OperatorContext): AppAbility {
     can('setUnitStatus', 'Unit', { tier });
   }
 
-  // Supervision: closure + fleet management.
+  // Supervision: closure + fleet management. Supervisors also need the
+  // audit log to investigate their tier's operators — tier-scoped read.
   if (has('supervisor')) {
     can(
       ['open', 'triage', 'dispatch', 'recommend', 'recordArrival', 'resolve', 'cancel'],
@@ -105,12 +106,16 @@ export function defineAbilitiesFor(ctx: OperatorContext): AppAbility {
     );
     can(['setUnitStatus', 'manageFleet'], 'Unit', { tier });
     can('revokeSession', 'Session', { tier });
+    can('view', 'Audit', { tier });
   }
 
   // Command (Gold/Silver/Bronze): cross-tier read + major-incident declaration.
+  // Commanders need the audit log across tiers to coordinate Gold/Silver/Bronze
+  // — unscoped, matching their incident/unit read scope.
   if (has('commander')) {
     can('view', 'Incident');
     can('view', 'Unit');
+    can('view', 'Audit');
     can('declareMajor', 'Incident');
   }
 

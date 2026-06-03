@@ -39,7 +39,8 @@ export interface GateDeps {
 /** Subject shapes the routes hand in, kept narrow so each route is explicit. */
 export type GateSubject =
   | { kind: 'Incident'; tier?: string | undefined; id?: string | undefined }
-  | { kind: 'Unit'; tier?: string | undefined; id?: string | undefined };
+  | { kind: 'Unit'; tier?: string | undefined; id?: string | undefined }
+  | { kind: 'Audit'; tier?: string | undefined };
 
 /**
  * Validate the Authorization header (or fall through to dev bypass). Returns
@@ -121,17 +122,20 @@ export async function emitAudit(
   outcome: 'success' | 'denied' | 'failed',
   metadata: Record<string, unknown> = {},
 ): Promise<void> {
+  // Only Incident / Unit subjects carry an `id`; Audit reads target the
+  // log itself. Discriminated union access keeps the type narrow.
+  const subjectId = 'id' in sub ? sub.id : undefined;
   const payload = {
     eventId: randomUUID(),
     occurredAt: new Date().toISOString(),
-    idempotencyKey: `audit:${session.accessTokenId}:${action}:${sub.kind}:${sub.id ?? ''}:${outcome}:${Date.now()}`,
+    idempotencyKey: `audit:${session.accessTokenId}:${action}:${sub.kind}:${subjectId ?? ''}:${outcome}:${Date.now()}`,
     actor: {
       id: session.operator.id,
       tier: session.operator.tier,
       roles: [...session.operator.roles],
     },
     action: `${actionDottedFor(sub.kind, action)}`,
-    subject: sub.id ? { kind: sub.kind, id: sub.id } : { kind: sub.kind },
+    subject: subjectId ? { kind: sub.kind, id: subjectId } : { kind: sub.kind },
     outcome,
     metadata,
   };
@@ -150,9 +154,10 @@ function hasConditions(conditions: Record<string, unknown>): boolean {
   return false;
 }
 
-function actionDottedFor(kind: 'Incident' | 'Unit', action: Action): string {
+function actionDottedFor(kind: GateSubject['kind'], action: Action): string {
   // The audit vocabulary is dotted by subject; the action is the CASL verb.
-  // e.g. `incident.dispatch`, `unit.setUnitStatus`. Open to evolution.
+  // e.g. `incident.dispatch`, `unit.setUnitStatus`, `audit.view`. Open to
+  // evolution.
   return `${kind.toLowerCase()}.${action}`;
 }
 

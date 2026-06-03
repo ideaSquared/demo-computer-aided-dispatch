@@ -21,6 +21,7 @@ on:
       - "tools/scripts/lifecycle-smoke.ts"
       - "tools/scripts/auth-smoke.ts"
       - "tools/scripts/enforce-smoke.ts"
+      - "tools/scripts/audit-smoke.ts"
       - ".dockerignore"
 
 concurrency:
@@ -112,6 +113,12 @@ jobs:
       # /me → refresh → logout → 401-after-revoke.
       - name: Dev-login smoke (gateway auth proxy)
         run: pnpm smoke:dev-login
+      # Phase 5 audit consumer: a call_handler is denied dispatch, the
+      # gateway emits audit.actionTaken{denied}, service.audit appends it
+      # to its event store, and admin reads it back via the gateway
+      # query proxy.
+      - name: Audit smoke (gateway → audit query)
+        run: pnpm smoke:audit
       - name: Dump container logs on failure
         if: failure()
         run: |
@@ -220,6 +227,12 @@ jobs:
       # /me → refresh → logout → 401-after-revoke.
       - name: Dev-login smoke (gateway auth proxy)
         run: pnpm smoke:dev-login
+      # Phase 5 audit consumer: a call_handler is denied dispatch, the
+      # gateway emits audit.actionTaken{denied}, service.audit appends it
+      # to its event store, and admin reads it back via the gateway
+      # query proxy.
+      - name: Audit smoke (gateway → audit query)
+        run: pnpm smoke:audit
       - name: Dump container logs on failure
         if: failure()
         run: |

@@ -20,6 +20,9 @@ export const config = loadEnv(
     // host:port for the auth gRPC service. The gateway calls `ValidateToken`
     // on every authenticated HTTP request + WS connect.
     AUTH_GRPC_URL: z.string().min(1).default('localhost:5011'),
+    // host:port for the audit gRPC service. The gateway proxies the
+    // supervisor / commander / admin read paths under /api/audit/*.
+    AUDIT_GRPC_URL: z.string().min(1).default('localhost:5091'),
     // When true (the demo default), the gateway accepts the Phase-1 URL
     // identity stub and synthesises a permissive session for unauthenticated
     // requests, so the existing smokes keep working unchanged. Production
