@@ -23,6 +23,7 @@ on:
       - "tools/scripts/auth-smoke.ts"
       - "tools/scripts/enforce-smoke.ts"
       - "tools/scripts/audit-smoke.ts"
+      - "tools/scripts/triage-stub-smoke.ts"
       - ".dockerignore"
 
 concurrency:
@@ -126,6 +127,12 @@ jobs:
       # query proxy.
       - name: Audit smoke (gateway → audit query)
         run: pnpm smoke:audit
+      # Phase 5 PR 3a: polyglot triage seam. Dispatcher logs in, posts to
+      # /api/triage/classify, gateway proxies to the Python gRPC service,
+      # the stub responds. PR 3b will swap the stub for the Ollama call
+      # and this smoke's assertions will then fail (canned shape changes).
+      - name: Triage-stub smoke (gateway → triage gRPC stub)
+        run: pnpm smoke:triage-stub
       - name: Dump container logs on failure
         if: failure()
         run: |
@@ -246,6 +253,12 @@ jobs:
       # query proxy.
       - name: Audit smoke (gateway → audit query)
         run: pnpm smoke:audit
+      # Phase 5 PR 3a: polyglot triage seam. Dispatcher logs in, posts to
+      # /api/triage/classify, gateway proxies to the Python gRPC service,
+      # the stub responds. PR 3b will swap the stub for the Ollama call
+      # and this smoke's assertions will then fail (canned shape changes).
+      - name: Triage-stub smoke (gateway → triage gRPC stub)
+        run: pnpm smoke:triage-stub
       - name: Dump container logs on failure
         if: failure()
         run: |
