@@ -1,7 +1,14 @@
 /**
  * Pure ranking core of the dispatch recommender. No I/O, no proto, no gRPC —
- * just geometry and ordering, so it can be exhaustively unit-tested (the only
- * local coverage this stateless service gets; runtime is CI-smoke only).
+ * just geometry and ordering, so it can be exhaustively unit-tested.
+ *
+ * FALLBACK ONLY (Phase 5+): the preferred path is `geo.NearestK`, which
+ * runs a PostGIS GiST KNN query against a denormalised unit_positions
+ * table. This inline haversine remains as the recommender's safety net
+ * for when geo is UNAVAILABLE (cold boot, dropped from compose, network
+ * blip) — see services/service.dispatch/src/grpc/handlers.ts. A
+ * user-facing 503 just because geo is catching up after a restart would
+ * be a worse failure mode than a transient straight-line ranking.
  *
  * The handler feeds in the incident's location and a flat list of candidate
  * units (already filtered to the right tier + AVAILABLE status by the resource

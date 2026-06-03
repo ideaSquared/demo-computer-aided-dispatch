@@ -1,6 +1,6 @@
 import Fastify from 'fastify';
 import { config } from './config.js';
-import { createIncidentReader, createResourceReader } from './grpc/clients.js';
+import { createGeoReader, createIncidentReader, createResourceReader } from './grpc/clients.js';
 import { createHandlers } from './grpc/handlers.js';
 import { startGrpcServer } from './grpc/server.js';
 
@@ -11,17 +11,23 @@ const app = Fastify({
 });
 
 // The recommender is stateless: no Postgres, no migrations, no NATS/Redis. Its
-// only deps are the incident + resource gRPC services, read on demand. The
-// clients are lazy/channel-based — construction does no I/O; the channel
-// connects on first RPC.
+// only deps are the incident + resource + geo gRPC services, read on demand.
+// The clients are lazy/channel-based — construction does no I/O; the channel
+// connects on first RPC. geo is the preferred path; resource backs the
+// haversine fallback that kicks in if geo returns UNAVAILABLE.
 const incident = createIncidentReader(config.INCIDENT_GRPC_URL);
 const resource = createResourceReader(config.RESOURCE_GRPC_URL);
+const geo = createGeoReader(config.GEO_GRPC_URL);
 app.log.info(
-  { incidentGrpc: config.INCIDENT_GRPC_URL, resourceGrpc: config.RESOURCE_GRPC_URL },
+  {
+    incidentGrpc: config.INCIDENT_GRPC_URL,
+    resourceGrpc: config.RESOURCE_GRPC_URL,
+    geoGrpc: config.GEO_GRPC_URL,
+  },
   'dispatch readers ready',
 );
 
-const handlers = createHandlers({ incident, resource });
+const handlers = createHandlers({ incident, resource, geo, log: app.log });
 const grpcServer = await startGrpcServer({ port: config.GRPC_PORT, handlers, log: app.log });
 
 // Fastify carries an HTTP /health probe so docker-compose / smoke tests can
@@ -42,6 +48,7 @@ async function shutdown(signal: string): Promise<void> {
     });
     incident.close();
     resource.close();
+    geo.close();
   } finally {
     process.exit(0);
   }
