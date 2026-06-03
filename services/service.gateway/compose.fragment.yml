@@ -15,6 +15,8 @@ service-gateway:
     INCIDENT_GRPC_URL: service-incident:5021
     RESOURCE_GRPC_URL: service-resource:5041
     DISPATCH_GRPC_URL: service-dispatch:5031
+    AUTH_GRPC_URL: service-auth:5011
+    DEV_AUTH_BYPASS: "true"
   depends_on:
       postgres:
         condition: service_healthy

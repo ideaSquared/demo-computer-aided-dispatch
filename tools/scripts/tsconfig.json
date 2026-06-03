@@ -15,7 +15,8 @@
     "dispatch-loop-smoke.ts",
     "recommend-smoke.ts",
     "lifecycle-smoke.ts",
-    "auth-smoke.ts"
+    "auth-smoke.ts",
+    "enforce-smoke.ts"
   ],
   "exclude": ["plop/templates/**"]
 }

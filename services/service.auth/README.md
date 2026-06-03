@@ -165,6 +165,13 @@ pnpm --filter @cad/service.auth dev
 curl http://localhost:5010/health           # → { "status": "ok", "service": "service.auth" }
 ```
 
+## Consumers
+
+- **`service.gateway`** — calls `ValidateToken` on every authenticated HTTP
+  request + WS connect, un-pickles `ability_json` with
+  `createMongoAbility(JSON.parse(...))`, and enforces the gate. See the
+  gateway's README for the bypass / production-posture story.
+
 ## Conventions
 
 - `src/index.ts` calls `initTracing()` BEFORE any other import. Don't reorder.

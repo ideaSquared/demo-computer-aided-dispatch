@@ -24,6 +24,7 @@ export {
   type OperatorContext,
   type Subject,
 } from './abilities.js';
+export { PermissionDeniedError } from './errors.js';
 export {
   isRole,
   isServiceTier,

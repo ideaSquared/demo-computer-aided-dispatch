@@ -48,6 +48,9 @@ services:
       INCIDENT_GRPC_URL: service-incident:5021
       RESOURCE_GRPC_URL: service-resource:5041
       DISPATCH_GRPC_URL: service-dispatch:5031
+      AUTH_GRPC_URL: service-auth:5011
+      # Demo-friendly default — see infra/docker-compose.yml for the policy.
+      DEV_AUTH_BYPASS: "true"
     develop:
       watch:
         - { action: sync, path: ../services/service.gateway/src, target: /app/services/service.gateway/src }

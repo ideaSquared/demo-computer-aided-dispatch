@@ -3,6 +3,7 @@ import * as grpc from '@grpc/grpc-js';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import type { IncidentClient } from '../clients/incident.js';
+import { emitAudit, type GateDeps, operatorMetadata, requireAbility } from './gate.js';
 
 /**
  * HTTP command path for incidents. Routes are thin: validate the body/params
@@ -91,9 +92,11 @@ interface IncidentJson {
 function toJson(incident: Incident): IncidentJson {
   const tier = PROTO_TO_TIER[incident.tier];
   const state = PROTO_TO_STATE[incident.state];
-  if (tier === null || state === null) {
+  if (!tier || !state) {
     // The incident service never emits UNSPECIFIED on a persisted incident;
-    // treat it as an upstream contract violation rather than guessing.
+    // treat it as an upstream contract violation rather than guessing. The
+    // truthy check rules out both `null` (UNSPECIFIED) and `undefined`
+    // (noUncheckedIndexedAccess gives every Record lookup `| undefined`).
     throw new Error('incident service returned an unspecified tier or state');
   }
   return {
@@ -101,7 +104,7 @@ function toJson(incident: Incident): IncidentJson {
     title: incident.title,
     tier,
     state,
-    severity: PROTO_TO_SEVERITY[incident.severity],
+    severity: PROTO_TO_SEVERITY[incident.severity] ?? null,
     location: incident.location ? { lat: incident.location.lat, lng: incident.location.lng } : null,
     unitIds: incident.unitIds,
     unitsOnScene: incident.unitsOnScene,
@@ -170,6 +173,8 @@ const GRPC_STATUS_TO_HTTP: Partial<Record<grpc.status, number>> = {
   [grpc.status.FAILED_PRECONDITION]: 409,
   [grpc.status.ABORTED]: 409,
   [grpc.status.INVALID_ARGUMENT]: 400,
+  [grpc.status.UNAUTHENTICATED]: 401,
+  [grpc.status.PERMISSION_DENIED]: 403,
 };
 
 function replyError(reply: FastifyReply, err: unknown): FastifyReply {
@@ -191,18 +196,51 @@ function replyValidation(reply: FastifyReply, err: z.ZodError): FastifyReply {
 
 // --- plugin ----------------------------------------------------------------
 
-export function registerIncidentRoutes(app: FastifyInstance, client: IncidentClient): void {
+/**
+ * For routes that need the incident's tier to do a scoped CASL check
+ * (triage / dispatch / arrivals / resolve / cancel / recommended-units), we
+ * fetch the incident first via the read path, derive its tier, then check
+ * ability against `{tier: thatTier}`. The extra round-trip is fine — the
+ * owning service ALSO re-checks (defence in depth).
+ */
+async function fetchIncidentTier(client: IncidentClient, id: string): Promise<WireTier | null> {
+  const res = await client.get({ id });
+  if (!res.incident) return null;
+  return PROTO_TO_TIER[res.incident.tier] ?? null;
+}
+
+export function registerIncidentRoutes(
+  app: FastifyInstance,
+  client: IncidentClient,
+  gate: GateDeps,
+): void {
   app.post('/api/incidents', async (req, reply) => {
     const body = OpenBodySchema.safeParse(req.body);
     if (!body.success) return replyValidation(reply, body.error);
+    const session = await requireAbility(req, reply, gate, 'open', {
+      kind: 'Incident',
+      tier: body.data.tier,
+    });
+    if (!session) return reply;
     try {
-      const res = await client.open({
-        title: body.data.title,
-        tier: TIER_TO_PROTO[body.data.tier],
-        location: body.data.location,
-        openedBy: body.data.openedBy ?? '',
-      });
+      const res = await client.open(
+        {
+          title: body.data.title,
+          tier: TIER_TO_PROTO[body.data.tier],
+          location: body.data.location,
+          // Audit attribution comes from the session — overrides any client-
+          // supplied `openedBy` so the wire can't lie about identity.
+          openedBy: session.operator.id,
+        },
+        operatorMetadata(session),
+      );
       if (!res.incident) throw new Error('incident service returned no incident');
+      await emitAudit(gate, session, 'open', { kind: 'Incident', id: res.incident.id }, 'success', {
+        route: 'POST /api/incidents',
+        tier: body.data.tier,
+      }).catch(() => {
+        /* best-effort */
+      });
       return reply.code(201).send({ incident: toJson(res.incident) });
     } catch (err) {
       return replyError(reply, err);
@@ -212,11 +250,21 @@ export function registerIncidentRoutes(app: FastifyInstance, client: IncidentCli
   app.get('/api/incidents', async (req, reply) => {
     const query = ListQuerySchema.safeParse(req.query);
     if (!query.success) return replyValidation(reply, query.error);
+    const session = await requireAbility(req, reply, gate, 'view', {
+      kind: 'Incident',
+      tier: query.data.tier,
+    });
+    if (!session) return reply;
     try {
-      const res = await client.listOpen({
-        tier: query.data.tier ? TIER_TO_PROTO[query.data.tier] : IncidentV1.ServiceTier.UNSPECIFIED,
-        limit: query.data.limit ?? 0,
-      });
+      const res = await client.listOpen(
+        {
+          tier: query.data.tier
+            ? TIER_TO_PROTO[query.data.tier]
+            : IncidentV1.ServiceTier.UNSPECIFIED,
+          limit: query.data.limit ?? 0,
+        },
+        operatorMetadata(session),
+      );
       return reply.send({ incidents: res.incidents.map(toJson) });
     } catch (err) {
       return replyError(reply, err);
@@ -226,8 +274,14 @@ export function registerIncidentRoutes(app: FastifyInstance, client: IncidentCli
   app.get('/api/incidents/:id', async (req, reply) => {
     const params = IdParamsSchema.safeParse(req.params);
     if (!params.success) return replyValidation(reply, params.error);
+    // `view` is checked without a tier — any view right on Incident is
+    // enough for a single GET. The narrower id-scoped tier check would
+    // require fetching first; the read path inside the owning service
+    // (which gets the operator metadata) is where that lands properly.
+    const session = await requireAbility(req, reply, gate, 'view', { kind: 'Incident' });
+    if (!session) return reply;
     try {
-      const res = await client.get({ id: params.data.id });
+      const res = await client.get({ id: params.data.id }, operatorMetadata(session));
       if (!res.incident) throw new Error('incident service returned no incident');
       return reply.send({ incident: toJson(res.incident) });
     } catch (err) {
@@ -240,14 +294,29 @@ export function registerIncidentRoutes(app: FastifyInstance, client: IncidentCli
     if (!params.success) return replyValidation(reply, params.error);
     const body = TriageBodySchema.safeParse(req.body);
     if (!body.success) return replyValidation(reply, body.error);
+    const session = await gateWithFetchedTier(req, reply, gate, client, params.data.id, 'triage');
+    if (!session) return reply;
     try {
-      const res = await client.triage({
-        id: params.data.id,
-        severity: SEVERITY_TO_PROTO[body.data.severity],
-        expectedVersion: body.data.expectedVersion ?? 0,
-        triagedBy: body.data.triagedBy ?? '',
-      });
+      const res = await client.triage(
+        {
+          id: params.data.id,
+          severity: SEVERITY_TO_PROTO[body.data.severity],
+          expectedVersion: body.data.expectedVersion ?? 0,
+          triagedBy: session.operator.id,
+        },
+        operatorMetadata(session),
+      );
       if (!res.incident) throw new Error('incident service returned no incident');
+      await emitAudit(
+        gate,
+        session,
+        'triage',
+        { kind: 'Incident', id: params.data.id },
+        'success',
+        { severity: body.data.severity },
+      ).catch(() => {
+        /* best-effort */
+      });
       return reply.send({ incident: toJson(res.incident) });
     } catch (err) {
       return replyError(reply, err);
@@ -259,14 +328,29 @@ export function registerIncidentRoutes(app: FastifyInstance, client: IncidentCli
     if (!params.success) return replyValidation(reply, params.error);
     const body = DispatchBodySchema.safeParse(req.body);
     if (!body.success) return replyValidation(reply, body.error);
+    const session = await gateWithFetchedTier(req, reply, gate, client, params.data.id, 'dispatch');
+    if (!session) return reply;
     try {
-      const res = await client.dispatch({
-        id: params.data.id,
-        unitIds: body.data.unitIds,
-        expectedVersion: body.data.expectedVersion ?? 0,
-        dispatchedBy: body.data.dispatchedBy ?? '',
-      });
+      const res = await client.dispatch(
+        {
+          id: params.data.id,
+          unitIds: body.data.unitIds,
+          expectedVersion: body.data.expectedVersion ?? 0,
+          dispatchedBy: session.operator.id,
+        },
+        operatorMetadata(session),
+      );
       if (!res.incident) throw new Error('incident service returned no incident');
+      await emitAudit(
+        gate,
+        session,
+        'dispatch',
+        { kind: 'Incident', id: params.data.id },
+        'success',
+        { unitIds: body.data.unitIds },
+      ).catch(() => {
+        /* best-effort */
+      });
       return reply.send({ incident: toJson(res.incident) });
     } catch (err) {
       return replyError(reply, err);
@@ -278,13 +362,35 @@ export function registerIncidentRoutes(app: FastifyInstance, client: IncidentCli
     if (!params.success) return replyValidation(reply, params.error);
     const body = ArrivalBodySchema.safeParse(req.body);
     if (!body.success) return replyValidation(reply, body.error);
+    const session = await gateWithFetchedTier(
+      req,
+      reply,
+      gate,
+      client,
+      params.data.id,
+      'recordArrival',
+    );
+    if (!session) return reply;
     try {
-      const res = await client.recordUnitArrival({
-        id: params.data.id,
-        unitId: body.data.unitId,
-        expectedVersion: body.data.expectedVersion ?? 0,
-      });
+      const res = await client.recordUnitArrival(
+        {
+          id: params.data.id,
+          unitId: body.data.unitId,
+          expectedVersion: body.data.expectedVersion ?? 0,
+        },
+        operatorMetadata(session),
+      );
       if (!res.incident) throw new Error('incident service returned no incident');
+      await emitAudit(
+        gate,
+        session,
+        'recordArrival',
+        { kind: 'Incident', id: params.data.id },
+        'success',
+        { unitId: body.data.unitId },
+      ).catch(() => {
+        /* best-effort */
+      });
       return reply.send({ incident: toJson(res.incident) });
     } catch (err) {
       return replyError(reply, err);
@@ -296,13 +402,27 @@ export function registerIncidentRoutes(app: FastifyInstance, client: IncidentCli
     if (!params.success) return replyValidation(reply, params.error);
     const body = ResolveBodySchema.safeParse(req.body ?? {});
     if (!body.success) return replyValidation(reply, body.error);
+    const session = await gateWithFetchedTier(req, reply, gate, client, params.data.id, 'resolve');
+    if (!session) return reply;
     try {
-      const res = await client.resolve({
-        id: params.data.id,
-        expectedVersion: body.data.expectedVersion ?? 0,
-        resolvedBy: body.data.resolvedBy ?? '',
-      });
+      const res = await client.resolve(
+        {
+          id: params.data.id,
+          expectedVersion: body.data.expectedVersion ?? 0,
+          resolvedBy: session.operator.id,
+        },
+        operatorMetadata(session),
+      );
       if (!res.incident) throw new Error('incident service returned no incident');
+      await emitAudit(
+        gate,
+        session,
+        'resolve',
+        { kind: 'Incident', id: params.data.id },
+        'success',
+      ).catch(() => {
+        /* best-effort */
+      });
       return reply.send({ incident: toJson(res.incident) });
     } catch (err) {
       return replyError(reply, err);
@@ -314,17 +434,63 @@ export function registerIncidentRoutes(app: FastifyInstance, client: IncidentCli
     if (!params.success) return replyValidation(reply, params.error);
     const body = CancelBodySchema.safeParse(req.body);
     if (!body.success) return replyValidation(reply, body.error);
+    const session = await gateWithFetchedTier(req, reply, gate, client, params.data.id, 'cancel');
+    if (!session) return reply;
     try {
-      const res = await client.cancel({
-        id: params.data.id,
-        reason: body.data.reason,
-        expectedVersion: body.data.expectedVersion ?? 0,
-        cancelledBy: body.data.cancelledBy ?? '',
-      });
+      const res = await client.cancel(
+        {
+          id: params.data.id,
+          reason: body.data.reason,
+          expectedVersion: body.data.expectedVersion ?? 0,
+          cancelledBy: session.operator.id,
+        },
+        operatorMetadata(session),
+      );
       if (!res.incident) throw new Error('incident service returned no incident');
+      await emitAudit(
+        gate,
+        session,
+        'cancel',
+        { kind: 'Incident', id: params.data.id },
+        'success',
+        { reason: body.data.reason },
+      ).catch(() => {
+        /* best-effort */
+      });
       return reply.send({ incident: toJson(res.incident) });
     } catch (err) {
       return replyError(reply, err);
     }
   });
+}
+
+/**
+ * Shared helper: fetch the incident's tier, then run requireAbility against
+ * `{tier: that}`. Returns the session if all checks pass; otherwise the
+ * reply has already been written and the caller must bail.
+ */
+async function gateWithFetchedTier(
+  req: Parameters<typeof requireAbility>[0],
+  reply: FastifyReply,
+  gate: GateDeps,
+  client: IncidentClient,
+  id: string,
+  action: 'triage' | 'dispatch' | 'recordArrival' | 'resolve' | 'cancel' | 'recommend',
+): ReturnType<typeof requireAbility> {
+  let tier: WireTier | null;
+  try {
+    tier = await fetchIncidentTier(client, id);
+  } catch (err) {
+    if (isServiceError(err) && err.code === grpc.status.NOT_FOUND) {
+      reply.code(404).send({ error: { code: 'NOT_FOUND', message: `incident '${id}' not found` } });
+      return null;
+    }
+    reply.code(500).send({ error: { code: 'INTERNAL', message: 'failed to read incident' } });
+    return null;
+  }
+  if (tier === null) {
+    reply.code(404).send({ error: { code: 'NOT_FOUND', message: `incident '${id}' not found` } });
+    return null;
+  }
+  return requireAbility(req, reply, gate, action, { kind: 'Incident', tier, id });
 }

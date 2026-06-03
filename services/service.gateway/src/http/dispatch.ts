@@ -1,8 +1,10 @@
-import { DispatchV1, type RecommendedUnit } from '@cad/proto';
+import { DispatchV1, IncidentV1, type RecommendedUnit } from '@cad/proto';
 import * as grpc from '@grpc/grpc-js';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import type { DispatchClient } from '../clients/dispatch.js';
+import type { IncidentClient } from '../clients/incident.js';
+import { type GateDeps, operatorMetadata, requireAbility } from './gate.js';
 
 /**
  * HTTP query path for the dispatch recommender. The route is thin: validate
@@ -51,9 +53,11 @@ interface RecommendedUnitJson {
 function toUnitJson(unit: RecommendedUnit): RecommendedUnitJson {
   const tier = PROTO_TO_TIER[unit.tier];
   const status = PROTO_TO_STATUS[unit.status];
-  if (tier === null || status === null) {
+  if (!tier || !status) {
     // The dispatch service never recommends a unit with an unspecified tier or
     // status; treat it as an upstream contract violation rather than guessing.
+    // The truthy check rules out both `null` (UNSPECIFIED) and `undefined`
+    // (Record lookup gets `| undefined` from noUncheckedIndexedAccess).
     throw new Error('dispatch service returned an unspecified tier or status');
   }
   return {
@@ -86,7 +90,17 @@ const GRPC_STATUS_TO_HTTP: Partial<Record<grpc.status, number>> = {
   [grpc.status.FAILED_PRECONDITION]: 409,
   [grpc.status.ABORTED]: 409,
   [grpc.status.INVALID_ARGUMENT]: 400,
+  [grpc.status.UNAUTHENTICATED]: 401,
+  [grpc.status.PERMISSION_DENIED]: 403,
 };
+
+const INCIDENT_PROTO_TO_TIER: Record<IncidentV1.ServiceTier, 'police' | 'medical' | 'fire' | null> =
+  {
+    [IncidentV1.ServiceTier.UNSPECIFIED]: null,
+    [IncidentV1.ServiceTier.POLICE]: 'police',
+    [IncidentV1.ServiceTier.MEDICAL]: 'medical',
+    [IncidentV1.ServiceTier.FIRE]: 'fire',
+  };
 
 function replyError(reply: FastifyReply, err: unknown): FastifyReply {
   if (isServiceError(err)) {
@@ -107,17 +121,50 @@ function replyValidation(reply: FastifyReply, err: z.ZodError): FastifyReply {
 
 // --- plugin ----------------------------------------------------------------
 
-export function registerDispatchRoutes(app: FastifyInstance, client: DispatchClient): void {
+export function registerDispatchRoutes(
+  app: FastifyInstance,
+  client: DispatchClient,
+  incidentClient: IncidentClient,
+  gate: GateDeps,
+): void {
   app.get('/api/incidents/:id/recommended-units', async (req, reply) => {
     const params = IdParamsSchema.safeParse(req.params);
     if (!params.success) return replyValidation(reply, params.error);
     const query = RecommendQuerySchema.safeParse(req.query);
     if (!query.success) return replyValidation(reply, query.error);
+    // Fetch the incident's tier first — `recommend` is tier-scoped per the
+    // permission matrix.
+    let incidentTier: 'police' | 'medical' | 'fire' | null;
     try {
-      const res = await client.recommendUnits({
-        incidentId: params.data.id,
-        limit: query.data.limit ?? 0,
-      });
+      const inc = await incidentClient.get({ id: params.data.id });
+      if (!inc.incident) {
+        return reply.code(404).send({
+          error: { code: 'NOT_FOUND', message: `incident '${params.data.id}' not found` },
+        });
+      }
+      incidentTier = INCIDENT_PROTO_TO_TIER[inc.incident.tier] ?? null;
+    } catch (err) {
+      return replyError(reply, err);
+    }
+    if (incidentTier === null) {
+      return reply
+        .code(404)
+        .send({ error: { code: 'NOT_FOUND', message: `incident '${params.data.id}' not found` } });
+    }
+    const session = await requireAbility(req, reply, gate, 'recommend', {
+      kind: 'Incident',
+      tier: incidentTier,
+      id: params.data.id,
+    });
+    if (!session) return reply;
+    try {
+      const res = await client.recommendUnits(
+        {
+          incidentId: params.data.id,
+          limit: query.data.limit ?? 0,
+        },
+        operatorMetadata(session),
+      );
       return reply.send({
         recommendations: res.recommendations.map((rec) => {
           if (!rec.unit) throw new Error('dispatch service returned a recommendation with no unit');

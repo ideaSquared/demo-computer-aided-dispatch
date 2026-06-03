@@ -20,10 +20,10 @@ import * as grpc from '@grpc/grpc-js';
  * onto an HTTP status).
  */
 export interface ResourceClient {
-  registerUnit(req: RegisterUnitRequest): Promise<RegisterUnitResponse>;
-  getUnit(req: GetUnitRequest): Promise<GetUnitResponse>;
-  listUnits(req: ListUnitsRequest): Promise<ListUnitsResponse>;
-  updateStatus(req: UpdateStatusRequest): Promise<UpdateStatusResponse>;
+  registerUnit(req: RegisterUnitRequest, md?: grpc.Metadata): Promise<RegisterUnitResponse>;
+  getUnit(req: GetUnitRequest, md?: grpc.Metadata): Promise<GetUnitResponse>;
+  listUnits(req: ListUnitsRequest, md?: grpc.Metadata): Promise<ListUnitsResponse>;
+  updateStatus(req: UpdateStatusRequest, md?: grpc.Metadata): Promise<UpdateStatusResponse>;
   close(): void;
 }
 
@@ -31,21 +31,27 @@ export function createResourceClient(url: string): ResourceClient {
   const client = new ResourceV1.ResourceServiceClient(url, grpc.credentials.createInsecure());
 
   function call<TReq, TRes>(
-    fn: (req: TReq, cb: (err: grpc.ServiceError | null, res: TRes) => void) => unknown,
+    fn: (
+      req: TReq,
+      md: grpc.Metadata,
+      cb: (err: grpc.ServiceError | null, res: TRes) => void,
+    ) => unknown,
     req: TReq,
+    md: grpc.Metadata | undefined,
   ): Promise<TRes> {
+    const metadata = md ?? new grpc.Metadata();
     return new Promise((resolve, reject) => {
-      fn.call(client, req, (err, res) => (err ? reject(err) : resolve(res)));
+      fn.call(client, req, metadata, (err, res) => (err ? reject(err) : resolve(res)));
     });
   }
 
   return {
-    registerUnit: (req) =>
-      call<RegisterUnitRequest, RegisterUnitResponse>(client.registerUnit, req),
-    getUnit: (req) => call<GetUnitRequest, GetUnitResponse>(client.getUnit, req),
-    listUnits: (req) => call<ListUnitsRequest, ListUnitsResponse>(client.listUnits, req),
-    updateStatus: (req) =>
-      call<UpdateStatusRequest, UpdateStatusResponse>(client.updateStatus, req),
+    registerUnit: (req, md) =>
+      call<RegisterUnitRequest, RegisterUnitResponse>(client.registerUnit, req, md),
+    getUnit: (req, md) => call<GetUnitRequest, GetUnitResponse>(client.getUnit, req, md),
+    listUnits: (req, md) => call<ListUnitsRequest, ListUnitsResponse>(client.listUnits, req, md),
+    updateStatus: (req, md) =>
+      call<UpdateStatusRequest, UpdateStatusResponse>(client.updateStatus, req, md),
     close: () => client.close(),
   };
 }

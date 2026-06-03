@@ -17,6 +17,18 @@ export const config = loadEnv(
     RESOURCE_GRPC_URL: z.string().min(1).default('localhost:5041'),
     // host:port for the dispatch (recommender) gRPC service.
     DISPATCH_GRPC_URL: z.string().min(1).default('localhost:5031'),
+    // host:port for the auth gRPC service. The gateway calls `ValidateToken`
+    // on every authenticated HTTP request + WS connect.
+    AUTH_GRPC_URL: z.string().min(1).default('localhost:5011'),
+    // When true (the demo default), the gateway accepts the Phase-1 URL
+    // identity stub and synthesises a permissive session for unauthenticated
+    // requests, so the existing smokes keep working unchanged. Production
+    // sets this false — the gateway then requires a real access token.
+    // See services/service.gateway/README.md and the service.auth PRD.
+    DEV_AUTH_BYPASS: z
+      .union([z.literal('true'), z.literal('false')])
+      .default('true')
+      .transform((v) => v === 'true'),
     OTEL_EXPORTER_OTLP_ENDPOINT: z.string().url().optional(),
   }),
 );
