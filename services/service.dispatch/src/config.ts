@@ -21,6 +21,10 @@ export const config = loadEnv(
     INCIDENT_GRPC_URL: z.string().min(1).default('localhost:5021'),
     // host:port for the resource (units) gRPC service.
     RESOURCE_GRPC_URL: z.string().min(1).default('localhost:5041'),
+    // host:port for the geo (NearestK) gRPC service. Phase-5 seam — the
+    // recommender prefers geo.NearestK and falls back to the inline
+    // haversine when geo is UNAVAILABLE (cold boot, dropped from compose).
+    GEO_GRPC_URL: z.string().min(1).default('localhost:5051'),
     OTEL_EXPORTER_OTLP_ENDPOINT: z.string().url().optional(),
   }),
 );

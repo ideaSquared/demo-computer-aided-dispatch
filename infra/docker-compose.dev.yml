@@ -112,6 +112,7 @@ services:
       GRPC_PORT: "5031"
       INCIDENT_GRPC_URL: service-incident:5021
       RESOURCE_GRPC_URL: service-resource:5041
+      GEO_GRPC_URL: service-geo:5051
     develop:
       watch:
         - { action: sync, path: ../services/service.dispatch/src, target: /app/services/service.dispatch/src }
@@ -140,12 +141,14 @@ services:
   service-geo:
     <<: *dev-build
     command: pnpm --filter @cad/service.geo dev
-    ports: ["5050:5050"]
+    ports: ["5050:5050", "5051:5051"]
     environment:
       <<: *dev-env
       PORT: "5050"
+      GRPC_PORT: "5051"
       DATABASE_URL: postgres://cad:cad@postgres:5432/cad
       DB_SCHEMA: geo
+      MIGRATE_ON_BOOT: "true"
     develop:
       watch:
         - { action: sync, path: ../services/service.geo/src, target: /app/services/service.geo/src }

@@ -30,6 +30,7 @@
     "smoke:resource-http": "tsx tools/scripts/resource-http-smoke.ts",
     "smoke:dispatch-loop": "tsx tools/scripts/dispatch-loop-smoke.ts",
     "smoke:recommend": "tsx tools/scripts/recommend-smoke.ts",
+    "smoke:geo": "tsx tools/scripts/geo-smoke.ts",
     "smoke:lifecycle": "tsx tools/scripts/lifecycle-smoke.ts",
     "smoke:auth": "tsx tools/scripts/auth-smoke.ts",
     "smoke:enforce": "tsx tools/scripts/enforce-smoke.ts",

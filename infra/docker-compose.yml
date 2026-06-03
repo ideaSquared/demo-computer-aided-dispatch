@@ -114,6 +114,7 @@ services:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
       INCIDENT_GRPC_URL: service-incident:5021
       RESOURCE_GRPC_URL: service-resource:5041
+      GEO_GRPC_URL: service-geo:5051
     restart: unless-stopped
 
   service-resource:
@@ -147,21 +148,22 @@ services:
       context: ..
       dockerfile: services/service.geo/Dockerfile
     ports:
-      - "5050:5050"
+      - "5050:5050"   # HTTP /health
+      - "5051:5051"   # gRPC GeoService
     environment:
       NODE_ENV: development
       PORT: "5050"
+      GRPC_PORT: "5051"
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
       DATABASE_URL: postgres://cad:cad@postgres:5432/cad
       DB_SCHEMA: geo
+      MIGRATE_ON_BOOT: "true"
       NATS_URL: nats://nats:4222
       REDIS_URL: redis://redis:6379
     depends_on:
       postgres:
         condition: service_healthy
       nats:
-        condition: service_healthy
-      redis:
         condition: service_healthy
     restart: unless-stopped
 

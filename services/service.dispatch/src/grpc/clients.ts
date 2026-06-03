@@ -1,15 +1,22 @@
-import type { GetRequest, GetResponse, ListUnitsRequest, ListUnitsResponse } from '@cad/proto';
-import { IncidentV1, ResourceV1 } from '@cad/proto';
+import type {
+  GetRequest,
+  GetResponse,
+  ListUnitsRequest,
+  ListUnitsResponse,
+  NearestKRequest,
+  NearestKResponse,
+} from '@cad/proto';
+import { GeoV1, IncidentV1, ResourceV1 } from '@cad/proto';
 import * as grpc from '@grpc/grpc-js';
 
 /**
- * Thin promisified wrappers over the generated incident + resource clients.
- * The recommender is a read-only consumer of both: it Gets the incident
- * (location + tier) and ListUnits the available fleet, then ranks locally.
+ * Thin promisified wrappers over the generated incident + resource + geo
+ * clients. The recommender is a read-only consumer of all three: it Gets
+ * the incident (location + tier), ListUnits the available fleet (for the
+ * fallback path), and calls geo.NearestK for the PostGIS-backed ranking.
  *
- * Only the two methods RecommendUnits needs are surfaced — keeping the
- * boundary narrow is the point (this service makes exactly two synchronous
- * reads per recommendation, no more). gRPC clients are lazy/channel-based, so
+ * Only the methods RecommendUnits needs are surfaced — keeping the
+ * boundary narrow is the point. gRPC clients are lazy/channel-based, so
  * construction does no I/O; the channel connects on first RPC.
  */
 export interface IncidentReader {
@@ -19,6 +26,11 @@ export interface IncidentReader {
 
 export interface ResourceReader {
   listUnits(req: ListUnitsRequest): Promise<ListUnitsResponse>;
+  close(): void;
+}
+
+export interface GeoReader {
+  nearestK(req: NearestKRequest): Promise<NearestKResponse>;
   close(): void;
 }
 
@@ -45,6 +57,14 @@ export function createResourceReader(url: string): ResourceReader {
   return {
     listUnits: (req) =>
       promisify<ListUnitsRequest, ListUnitsResponse>(client, client.listUnits, req),
+    close: () => client.close(),
+  };
+}
+
+export function createGeoReader(url: string): GeoReader {
+  const client = new GeoV1.GeoServiceClient(url, grpc.credentials.createInsecure());
+  return {
+    nearestK: (req) => promisify<NearestKRequest, NearestKResponse>(client, client.nearestK, req),
     close: () => client.close(),
   };
 }

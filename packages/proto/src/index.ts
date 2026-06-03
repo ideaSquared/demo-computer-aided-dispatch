@@ -42,6 +42,12 @@ export type {
 } from '../gen/ts/cad/dispatch/v1/dispatch.js';
 export * as DispatchV1 from '../gen/ts/cad/dispatch/v1/dispatch.js';
 export type {
+  NearestKRequest,
+  NearestKResponse,
+  UnitDistance,
+} from '../gen/ts/cad/geo/v1/geo.js';
+export * as GeoV1 from '../gen/ts/cad/geo/v1/geo.js';
+export type {
   CancelRequest,
   CancelResponse,
   DispatchRequest,

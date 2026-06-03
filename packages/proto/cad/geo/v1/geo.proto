@@ -1,0 +1,70 @@
+// service.geo — PostGIS-backed geospatial surface. Phase 5 introduces
+// NearestK; later phases extend with forward/reverse geocoding, isochrones,
+// and routing-aware ETA. Each addition lands behind a new RPC on this
+// service, keeping the contract stable for dispatch + console callers.
+//
+// The `ServiceTier` and `UnitStatus` enums are defined LOCALLY rather than
+// imported from cad.resource.v1 so this contract is self-contained — a caller
+// of GeoService needn't link the resource proto. The service translates
+// between the resource enums and these on the way in (subscriber) and out
+// (handler), mirroring the dispatch boundary.
+//
+// Each RPC has its own Request/Response wrapper so individual methods can
+// grow fields without forcing a v2 (buf STANDARD enforces this). See
+// .claude/skills/grpc-contract.
+
+syntax = "proto3";
+
+package cad.geo.v1;
+
+import "cad/common/v1/geo.proto";
+
+service GeoService {
+  // K-nearest-neighbour search across the unit-position table. Server caps
+  // `k` at 50; both filters are optional (UNSPECIFIED = any).
+  rpc NearestK(NearestKRequest) returns (NearestKResponse);
+}
+
+// ---- requests --------------------------------------------------------------
+
+message NearestKRequest {
+  cad.common.v1.GeoPoint origin = 1;
+  ServiceTier tier = 2;    // optional filter; UNSPECIFIED = any.
+  UnitStatus status = 3;   // optional filter; UNSPECIFIED = any.
+  uint32 k = 4;            // max results; server caps at 50.
+}
+
+// ---- responses -------------------------------------------------------------
+
+message NearestKResponse {
+  repeated UnitDistance results = 1;  // ordered nearest-first.
+}
+
+// ---- domain shape ----------------------------------------------------------
+
+message UnitDistance {
+  string unit_id = 1;
+  ServiceTier tier = 2;
+  UnitStatus status = 3;
+  cad.common.v1.GeoPoint location = 4;
+  double distance_m = 5;   // ST_Distance, metres on geography(Point,4326).
+  string updated_at = 6;   // RFC3339; envelope timestamps stay strings on wire.
+}
+
+// ---- enums -----------------------------------------------------------------
+
+enum ServiceTier {
+  SERVICE_TIER_UNSPECIFIED = 0;
+  SERVICE_TIER_POLICE = 1;
+  SERVICE_TIER_MEDICAL = 2;
+  SERVICE_TIER_FIRE = 3;
+}
+
+enum UnitStatus {
+  UNIT_STATUS_UNSPECIFIED = 0;
+  UNIT_STATUS_AVAILABLE = 1;
+  UNIT_STATUS_DISPATCHED = 2;
+  UNIT_STATUS_EN_ROUTE = 3;
+  UNIT_STATUS_ON_SCENE = 4;
+  UNIT_STATUS_OUT_OF_SERVICE = 5;
+}
