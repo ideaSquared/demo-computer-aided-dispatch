@@ -1,4 +1,5 @@
 import { type Incident, IncidentV1 } from '@cad/proto';
+import type { AiSuggestionRow } from '../db/repository.js';
 import type { IncidentState, IncidentStatus, ServiceTier, Severity } from '../domain/index.js';
 
 /**
@@ -32,7 +33,24 @@ const SEVERITY_TO_PROTO: Record<Severity, IncidentV1.Severity> = {
   critical: IncidentV1.Severity.CRITICAL,
 };
 
-export function toProtoIncident(id: string, state: IncidentState, version: number): Incident {
+const AI_SEVERITY_TO_PROTO: Record<string, IncidentV1.Severity> = {
+  low: IncidentV1.Severity.LOW,
+  medium: IncidentV1.Severity.MEDIUM,
+  high: IncidentV1.Severity.HIGH,
+  critical: IncidentV1.Severity.CRITICAL,
+};
+
+export function toProtoIncident(
+  id: string,
+  state: IncidentState,
+  version: number,
+  ai: AiSuggestionRow | null = null,
+): Incident {
+  // The AI suggestion projects to a sub-message when present; otherwise we
+  // leave it `undefined` so the wire layer can map that to a JSON `null`.
+  // We skip suggestions whose severity is UNSPECIFIED — the Python service
+  // emits that as the "no hint" sentinel and the chip should not render.
+  const aiSeverity = ai ? AI_SEVERITY_TO_PROTO[ai.severity] : undefined;
   return {
     id,
     title: state.title,
@@ -45,6 +63,16 @@ export function toProtoIncident(id: string, state: IncidentState, version: numbe
     openedAt: state.openedAt,
     updatedAt: state.updatedAt,
     version,
+    aiSuggestion:
+      ai && aiSeverity !== undefined
+        ? {
+            severity: aiSeverity,
+            confidence: ai.confidence,
+            rationale: ai.rationale,
+            modelVersion: ai.model_version,
+            receivedAt: ai.received_at,
+          }
+        : undefined,
   };
 }
 

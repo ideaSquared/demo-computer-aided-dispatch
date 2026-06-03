@@ -53,6 +53,19 @@ export async function loadEvents(db: DbClient, aggregateId: string): Promise<Loa
   return { events, version: lastVersion };
 }
 
+/**
+ * The triage classifier's latest suggestion for an incident, as projected
+ * onto every read. `null` when the classifier hasn't run on this incident
+ * yet (or produced UNSPECIFIED and was skipped at the subscriber).
+ */
+export interface AiSuggestionRow {
+  severity: string;
+  confidence: number;
+  rationale: string;
+  model_version: string;
+  received_at: string;
+}
+
 interface ViewRow {
   id: string;
   status: string;
@@ -60,18 +73,71 @@ interface ViewRow {
   state: IncidentState;
   version: number;
   updated_at: string;
+  ai_suggestion: AiSuggestionRow | null;
+}
+
+// `postgres-js` returns numeric columns as strings — coerce here so the
+// proto-projection layer never sees a stringy confidence (which would
+// silently land as 0 on a double-typed field).
+function coerceAi(raw: unknown): AiSuggestionRow | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  if (typeof r.severity !== 'string' || typeof r.model_version !== 'string') return null;
+  return {
+    severity: r.severity,
+    confidence: Number(r.confidence ?? 0),
+    rationale: typeof r.rationale === 'string' ? r.rationale : '',
+    model_version: r.model_version,
+    received_at: typeof r.received_at === 'string' ? r.received_at : '',
+  };
+}
+
+// Shared SELECT projection — LEFT JOINs the AI suggestion row by incident id
+// and bundles it into a single nested object (`ai`) so the result shape is
+// uniform whether or not a suggestion exists. Driver row type uses `unknown`
+// for the JSON blob; `coerceAi` narrows it.
+interface DbViewRow {
+  id: string;
+  status: string;
+  tier: string;
+  state: IncidentState;
+  version: number;
+  updated_at: string;
+  ai: unknown;
+}
+
+function projectRow(row: DbViewRow): ViewRow {
+  return {
+    id: row.id,
+    status: row.status,
+    tier: row.tier,
+    state: row.state,
+    version: Number(row.version),
+    updated_at: row.updated_at,
+    ai_suggestion: coerceAi(row.ai),
+  };
 }
 
 export async function loadView(db: DbClient, aggregateId: string): Promise<ViewRow | null> {
-  const rows = await db<ViewRow[]>`
-    SELECT id, status, tier, state, version, updated_at
-    FROM incident_view
-    WHERE id = ${aggregateId}
+  const rows = await db<DbViewRow[]>`
+    SELECT iv.id, iv.status, iv.tier, iv.state, iv.version, iv.updated_at,
+      CASE WHEN ai.incident_id IS NULL THEN NULL ELSE
+        jsonb_build_object(
+          'severity', ai.severity,
+          'confidence', ai.confidence,
+          'rationale', ai.rationale,
+          'model_version', ai.model_version,
+          'received_at', ai.received_at
+        )
+      END AS ai
+    FROM incident_view iv
+    LEFT JOIN ai_triage_suggestions ai ON ai.incident_id = iv.id
+    WHERE iv.id = ${aggregateId}
     LIMIT 1
   `;
   const row = rows[0];
   if (!row) return null;
-  return { ...row, version: Number(row.version) };
+  return projectRow(row);
 }
 
 export async function listOpen(
@@ -83,21 +149,86 @@ export async function listOpen(
   // is in.
   const openStatuses = ['open', 'triaged', 'dispatched', 'enRoute', 'onScene'];
   const rows = opts.tier
-    ? await db<ViewRow[]>`
-        SELECT id, status, tier, state, version, updated_at
-        FROM incident_view
-        WHERE status = ANY(${openStatuses}) AND tier = ${opts.tier}
-        ORDER BY updated_at DESC
+    ? await db<DbViewRow[]>`
+        SELECT iv.id, iv.status, iv.tier, iv.state, iv.version, iv.updated_at,
+          CASE WHEN ai.incident_id IS NULL THEN NULL ELSE
+            jsonb_build_object(
+              'severity', ai.severity,
+              'confidence', ai.confidence,
+              'rationale', ai.rationale,
+              'model_version', ai.model_version,
+              'received_at', ai.received_at
+            )
+          END AS ai
+        FROM incident_view iv
+        LEFT JOIN ai_triage_suggestions ai ON ai.incident_id = iv.id
+        WHERE iv.status = ANY(${openStatuses}) AND iv.tier = ${opts.tier}
+        ORDER BY iv.updated_at DESC
         LIMIT ${opts.limit}
       `
-    : await db<ViewRow[]>`
-        SELECT id, status, tier, state, version, updated_at
-        FROM incident_view
-        WHERE status = ANY(${openStatuses})
-        ORDER BY updated_at DESC
+    : await db<DbViewRow[]>`
+        SELECT iv.id, iv.status, iv.tier, iv.state, iv.version, iv.updated_at,
+          CASE WHEN ai.incident_id IS NULL THEN NULL ELSE
+            jsonb_build_object(
+              'severity', ai.severity,
+              'confidence', ai.confidence,
+              'rationale', ai.rationale,
+              'model_version', ai.model_version,
+              'received_at', ai.received_at
+            )
+          END AS ai
+        FROM incident_view iv
+        LEFT JOIN ai_triage_suggestions ai ON ai.incident_id = iv.id
+        WHERE iv.status = ANY(${openStatuses})
+        ORDER BY iv.updated_at DESC
         LIMIT ${opts.limit}
       `;
-  return rows.map((r) => ({ ...r, version: Number(r.version) }));
+  return rows.map(projectRow);
+}
+
+/**
+ * Idempotent upsert for the AI suggestion read-model. Re-delivery of the
+ * same triage.classified event writes the same row; a new prompt version
+ * overwrites the prior row for the same incident. We DON'T track history
+ * here — that's deliberate; the audit log carries the model_version, so a
+ * replay against the audit store reconstructs old suggestions.
+ *
+ * Returns `null` if there's no matching incident (e.g. the event arrived
+ * before the open event was persisted, or the incident was deleted): the
+ * caller treats this as a skip + log.
+ */
+export async function upsertAiSuggestion(
+  db: DbClient,
+  args: {
+    incidentId: string;
+    severity: string;
+    confidence: number;
+    rationale: string;
+    modelVersion: string;
+  },
+): Promise<{ tier: string } | null> {
+  // Read the incident first so the subscriber can short-circuit (and log)
+  // when the event is for an unknown id, without burning a write. We also
+  // need the tier to publish the downstream fan-out event.
+  const incidents = await db<Array<{ tier: string }>>`
+    SELECT tier FROM incident_view WHERE id = ${args.incidentId} LIMIT 1
+  `;
+  const incident = incidents[0];
+  if (!incident) return null;
+
+  await db`
+    INSERT INTO ai_triage_suggestions
+      (incident_id, severity, confidence, rationale, model_version, received_at)
+    VALUES
+      (${args.incidentId}, ${args.severity}, ${args.confidence}, ${args.rationale}, ${args.modelVersion}, NOW())
+    ON CONFLICT (incident_id) DO UPDATE SET
+      severity = EXCLUDED.severity,
+      confidence = EXCLUDED.confidence,
+      rationale = EXCLUDED.rationale,
+      model_version = EXCLUDED.model_version,
+      received_at = EXCLUDED.received_at
+  `;
+  return { tier: incident.tier };
 }
 
 /**

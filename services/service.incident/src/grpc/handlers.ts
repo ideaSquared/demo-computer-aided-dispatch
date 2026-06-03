@@ -393,7 +393,7 @@ export function createHandlers(deps: Deps): IncidentV1.IncidentServiceServer {
             });
           }
           callback(null, {
-            incident: toProtoIncident(row.id, row.state, row.version),
+            incident: toProtoIncident(row.id, row.state, row.version, row.ai_suggestion),
           });
         } catch (err) {
           callback(mapError(err), null);
@@ -411,7 +411,7 @@ export function createHandlers(deps: Deps): IncidentV1.IncidentServiceServer {
           const limit = call.request.limit > 0 ? Math.min(call.request.limit, 500) : 100;
           const rows = await listOpen(deps.db, tier ? { tier, limit } : { limit });
           callback(null, {
-            incidents: rows.map((r) => toProtoIncident(r.id, r.state, r.version)),
+            incidents: rows.map((r) => toProtoIncident(r.id, r.state, r.version, r.ai_suggestion)),
           });
         } catch (err) {
           callback(mapError(err), null);

@@ -5,6 +5,7 @@ import { config } from './config.js';
 import { migrate } from './db/migrate.js';
 import { createHandlers } from './grpc/handlers.js';
 import { startGrpcServer } from './grpc/server.js';
+import { subscribeTriageClassified } from './subscribers/triageClassified.js';
 import { subscribeUnits } from './subscribers/unit.js';
 
 const app = Fastify({
@@ -40,6 +41,13 @@ const grpcServer = await startGrpcServer({ port: config.GRPC_PORT, handlers, log
 const unitLoop = subscribeUnits({ db, nats, log: app.log });
 void unitLoop.catch((err) => {
   app.log.error({ err }, 'unit→incident subscriber crashed');
+});
+
+// 4b. The AI-suggestion loop: consume triage.classified, upsert the chip's
+//     read-model row, and republish incident.aiSuggestionUpdated for WS fanout.
+const triageLoop = subscribeTriageClassified({ db, nats, log: app.log });
+void triageLoop.catch((err) => {
+  app.log.error({ err }, 'triage.classified subscriber crashed');
 });
 
 // 5. Fastify carries an HTTP /health probe so docker-compose / smoke tests
