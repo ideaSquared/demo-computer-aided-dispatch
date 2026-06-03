@@ -49,5 +49,10 @@ __pycache__/
 .ruff_cache/
 .mypy_cache/
 
+# Claude Code session-local worktrees
+# (agents run in isolated worktrees under .claude/worktrees/<id>/ — these
+# are git's own bookkeeping, never real content to track)
+.claude/worktrees/
+
 # Docker
 .docker/
