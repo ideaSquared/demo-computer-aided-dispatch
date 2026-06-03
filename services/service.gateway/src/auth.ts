@@ -160,9 +160,14 @@ export function bypassFromUrl(query: Record<string, string | string[] | undefine
     roles = [roleParam];
   }
   if (roles.length === 0) {
-    // Supervisor is the smallest set of roles that satisfies every existing
-    // smoke (dispatch + resolve + manageFleet + setUnitStatus, all in tier).
-    roles = ['supervisor'];
+    // `admin` is the only role with cross-tier reach (`manage all`, no tier
+    // condition). The existing dependency-light smokes
+    // (incident-http / resource-http / dispatch-loop / recommend / lifecycle)
+    // mix all three tiers in a single run, so a tier-scoped default
+    // (supervisor/police) would 403 the first off-tier write. `admin` trivially
+    // passes them all. The dev role-switcher (PR #3) replaces this surface
+    // with a real login flow.
+    roles = ['admin'];
   }
   const operator: Operator = {
     id: operatorId,

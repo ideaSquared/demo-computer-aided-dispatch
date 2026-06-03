@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { bypassFromUrl, canSubscribe } from '../auth.js';
 
 describe('bypassFromUrl', () => {
-  it('synthesises a default supervisor session when no params are present', () => {
+  it('synthesises a default admin session when no params are present', () => {
+    // admin is the only role with cross-tier reach (`manage all`), which is
+    // what the existing cross-tier smokes need to pass under the bypass.
     const session = bypassFromUrl({});
     expect(session.operator.tier).toBe('police');
-    expect(session.operator.roles).toEqual(['supervisor']);
+    expect(session.operator.roles).toEqual(['admin']);
     expect(session.operator.id).toBe('dev-bypass-default');
     expect(session.accessTokenId).toContain('dev-bypass');
   });
