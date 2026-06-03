@@ -101,7 +101,11 @@ export function up(pgm: MigrationBuilder): void {
       access_token_id: { type: 'uuid', notNull: true },
       issued_at: { type: 'timestamptz', notNull: true, default: pgm.func('NOW()') },
       expires_at: { type: 'timestamptz', notNull: true },
-      revoked_at: { type: 'timestamptz', notNull: true, default: null },
+      // null = active, timestamp = revoked. The repository writes null on
+      // insert and an ISO timestamp on revoke / refresh-rotation. The partial
+      // index below (WHERE revoked_at IS NULL) keeps ValidateToken's hot
+      // lookup narrow as revoked rows accumulate.
+      revoked_at: { type: 'timestamptz', notNull: false },
     },
   );
   pgm.createIndex({ schema, name: 'sessions' }, ['operator_id'], {
