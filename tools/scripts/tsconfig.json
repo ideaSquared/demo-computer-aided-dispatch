@@ -14,7 +14,8 @@
     "resource-http-smoke.ts",
     "dispatch-loop-smoke.ts",
     "recommend-smoke.ts",
-    "lifecycle-smoke.ts"
+    "lifecycle-smoke.ts",
+    "auth-smoke.ts"
   ],
   "exclude": ["plop/templates/**"]
 }

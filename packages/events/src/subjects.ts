@@ -15,6 +15,12 @@ export const subjects = {
   UnitStatusChanged: 'unit.statusChanged',
   AuditActionTaken: 'audit.actionTaken',
   PresenceChanged: 'presence.changed',
+  // Auth events — emitted by service.auth, consumed by service.audit. Not
+  // wired into `topicsFor` until a console-side consumer needs them.
+  AuthLoginSuccess: 'auth.login.success',
+  AuthLoginFailed: 'auth.login.failed',
+  AuthLogout: 'auth.logout',
+  AuthSessionRevoked: 'auth.sessionRevoked',
 } as const;
 
 export type SubjectName = keyof typeof subjects;

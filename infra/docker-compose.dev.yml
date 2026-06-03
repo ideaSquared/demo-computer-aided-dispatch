@@ -58,12 +58,16 @@ services:
   service-auth:
     <<: *dev-build
     command: pnpm --filter @cad/service.auth dev
-    ports: ["5010:5010"]
+    ports: ["5010:5010", "5011:5011"]
     environment:
       <<: *dev-env
       PORT: "5010"
+      GRPC_PORT: "5011"
       DATABASE_URL: postgres://cad:cad@postgres:5432/cad
       DB_SCHEMA: auth
+      MIGRATE_ON_BOOT: "true"
+      DEV_MODE: "true"
+      JWT_SECRET: dev-only-not-a-real-secret
     develop:
       watch:
         - { action: sync, path: ../services/service.auth/src, target: /app/services/service.auth/src }

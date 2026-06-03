@@ -19,6 +19,7 @@ on:
       - "tools/scripts/dispatch-loop-smoke.ts"
       - "tools/scripts/recommend-smoke.ts"
       - "tools/scripts/lifecycle-smoke.ts"
+      - "tools/scripts/auth-smoke.ts"
       - ".dockerignore"
 
 concurrency:
@@ -94,6 +95,12 @@ jobs:
       # drive the incident to enRoute / onScene via the NATS subscriber.
       - name: Unit-movement→incident-lifecycle smoke
         run: pnpm smoke:lifecycle
+      # Phase 4 identity: upsert an operator → login → validate access
+      # token → revoke session → validate again (asserts UNAUTHENTICATED).
+      # Drives the auth service's dev-only HTTP wrappers, which call the
+      # same core as the gRPC AuthService.
+      - name: Auth smoke
+        run: pnpm smoke:auth
       - name: Dump container logs on failure
         if: failure()
         run: |
@@ -188,6 +195,12 @@ jobs:
       # drive the incident to enRoute / onScene via the NATS subscriber.
       - name: Unit-movement→incident-lifecycle smoke
         run: pnpm smoke:lifecycle
+      # Phase 4 identity: upsert an operator → login → validate access
+      # token → revoke session → validate again (asserts UNAUTHENTICATED).
+      # Drives the auth service's dev-only HTTP wrappers, which call the
+      # same core as the gRPC AuthService.
+      - name: Auth smoke
+        run: pnpm smoke:auth
       - name: Dump container logs on failure
         if: failure()
         run: |

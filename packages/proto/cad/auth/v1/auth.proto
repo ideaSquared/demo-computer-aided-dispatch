@@ -1,0 +1,156 @@
+// service.auth — identity provider for the CAD system. Classical (not
+// event-sourced) — operators + sessions tables. The role / permission model
+// is canonical in `@cad/lib.authz`; this service issues CASL abilities
+// derived from `(tier, roles, assignments)` and ships them to callers on
+// the wire as `ability_json`.
+//
+// Each RPC has its own Request/Response wrapper so individual methods can
+// grow fields without forcing a v2 (buf STANDARD enforces this).
+//
+// See the Notion PRD:
+//   https://www.notion.so/37389ffb19fc814ca07ec9c56f982b62
+
+syntax = "proto3";
+
+package cad.auth.v1;
+
+service AuthService {
+  // Exchange credentials for an access + refresh token + serialised ability.
+  rpc Login(LoginRequest) returns (LoginResponse);
+
+  // Rotate an unrevoked refresh token. Reuse of a revoked refresh token
+  // revokes every active session for that operator and returns UNAUTHENTICATED.
+  rpc Refresh(RefreshRequest) returns (RefreshResponse);
+
+  // Hot-path: the gateway calls this on every WebSocket open and per
+  // restricted HTTP request. Verifies the JWT, looks up the unrevoked
+  // session by `jti`, and returns the operator + a freshly-synthesised
+  // ability. Errors map to UNAUTHENTICATED.
+  rpc ValidateToken(ValidateTokenRequest) returns (ValidateTokenResponse);
+
+  // Supervisor / admin-driven logout. Sets `revoked_at` on the session row;
+  // a `auth.sessionRevoked` event is emitted after commit.
+  rpc RevokeSession(RevokeSessionRequest) returns (RevokeSessionResponse);
+
+  // Dev-only: lists seeded operators with cleartext passwords for the
+  // console's dev switcher. Returns an empty list unless the service was
+  // started with DEV_MODE=true. Explicitly a dev convenience — production
+  // builds never call this.
+  rpc ListSeededOperators(ListSeededOperatorsRequest) returns (ListSeededOperatorsResponse);
+}
+
+// ---- requests --------------------------------------------------------------
+
+message LoginRequest {
+  string email = 1;
+  string password = 2;
+}
+
+message RefreshRequest {
+  // The opaque refresh token returned from a prior Login/Refresh. The server
+  // looks up its sha256 hash in the sessions table.
+  string refresh_token = 1;
+}
+
+message ValidateTokenRequest {
+  // The JWT access token. HS256, signed by the auth service.
+  string access_token = 1;
+}
+
+message RevokeSessionRequest {
+  string session_id = 1;
+  // Audit attribution — operator id of whoever pressed the revoke button.
+  string revoked_by = 2;
+}
+
+message ListSeededOperatorsRequest {}
+
+// ---- responses -------------------------------------------------------------
+
+// Common shape for Login + Refresh — the freshly-issued tokens, the operator
+// they belong to, and the serialised ability the caller (typically the
+// gateway) un-pickles to enforce.
+message LoginResponse {
+  string access_token = 1;
+  string refresh_token = 2;
+  // RFC3339 — when the access token expires. Refresh expiry is implicit (the
+  // server tracks it on the session row).
+  string expires_at = 3;
+  Operator operator = 4;
+  // `JSON.stringify` of the CASL `ability.rules` array (the raw rules JSON,
+  // not the full ability). The gateway calls `createMongoAbility(rules)` to
+  // un-pickle. Keeping it a JSON string keeps the proto independent of the
+  // CASL version on either end.
+  string ability_json = 5;
+  // The session row id. Useful for RevokeSession + audit logs.
+  string session_id = 6;
+}
+
+message RefreshResponse {
+  string access_token = 1;
+  string refresh_token = 2;
+  string expires_at = 3;
+  Operator operator = 4;
+  string ability_json = 5;
+  string session_id = 6;
+}
+
+message ValidateTokenResponse {
+  Operator operator = 1;
+  string ability_json = 2;
+  string expires_at = 3;
+}
+
+message RevokeSessionResponse {}
+
+message ListSeededOperatorsResponse {
+  repeated SeededOperator seeded_operators = 1;
+}
+
+// ---- domain shape ----------------------------------------------------------
+
+message Operator {
+  string id = 1;
+  string email = 2;
+  string display_name = 3;
+  ServiceTier tier = 4;
+  repeated Role roles = 5;
+  bool disabled = 6;
+}
+
+// Dev-only convenience payload. `password` is cleartext — explicitly a dev
+// pattern (deterministic seed, never used in production builds). The
+// console's dev switcher renders this to let an operator log in as any
+// seeded persona.
+message SeededOperator {
+  string email = 1;
+  string password = 2;
+  string display_name = 3;
+  ServiceTier tier = 4;
+  repeated Role roles = 5;
+}
+
+// ---- enums -----------------------------------------------------------------
+
+// Mirrors `@cad/lib.authz`'s SERVICE_TIERS. Locale-agnostic — display labels
+// (Ambulance / EMS / Paramedic) come from the i18n locale pack, not here.
+enum ServiceTier {
+  SERVICE_TIER_UNSPECIFIED = 0;
+  SERVICE_TIER_POLICE = 1;
+  SERVICE_TIER_MEDICAL = 2;
+  SERVICE_TIER_FIRE = 3;
+}
+
+// Mirrors `@cad/lib.authz`'s ROLES. Job functions are canonical; localised
+// labels (Call Handler / Call Taker, Dispatcher / Telecommunicator, …) are
+// presentation only — see the PRD's Localisation section.
+enum Role {
+  ROLE_UNSPECIFIED = 0;
+  ROLE_CALL_HANDLER = 1;
+  ROLE_DISPATCHER = 2;
+  ROLE_SUPERVISOR = 3;
+  ROLE_COMMANDER = 4;
+  ROLE_RESPONDER = 5;
+  ROLE_OBSERVER = 6;
+  ROLE_ADMIN = 7;
+}
