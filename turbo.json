@@ -8,10 +8,7 @@
       "outputs": ["dist/**", ".next/**", "!.next/cache/**", "gen/**"],
       "inputs": [
         "src/**",
-        "cad/**",
         "proto/**",
-        "buf.yaml",
-        "buf.gen.yaml",
         "package.json",
         "tsconfig.json",
         "tsup.config.ts",

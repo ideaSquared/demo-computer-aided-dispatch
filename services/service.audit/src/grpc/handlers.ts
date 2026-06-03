@@ -1,6 +1,6 @@
 import type { DbClient } from '@cad/db';
 import type { AuditEvent } from '@cad/proto';
-import { AuditV1 } from '@cad/proto';
+import { AuditV1, HealthV1 } from '@cad/proto';
 import * as grpc from '@grpc/grpc-js';
 import { type AuditRow, getByTarget, type QueryFilters, queryAudit } from '../db/repository.js';
 import { decodeCursor, encodeCursor } from './cursor.js';
@@ -92,6 +92,13 @@ export function createHandlers(deps: Deps): AuditV1.AuditQueryServiceServer {
           callback(mapError(err), null);
         }
       })();
+    },
+
+    health: (_call, callback) => {
+      // Static SERVING — we're inside the listener so the process is up.
+      // A richer "are we caught up on NATS?" probe lives behind the
+      // Fastify /health route (still cheap, see server.ts).
+      callback(null, { status: HealthV1.CheckResponse_ServingStatus.SERVING });
     },
   };
 }
