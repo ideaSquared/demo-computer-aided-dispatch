@@ -35,6 +35,11 @@
       "types": "./dist/presence/index.d.ts",
       "import": "./dist/presence/index.js",
       "default": "./src/presence/index.ts"
+    },
+    "./triage": {
+      "types": "./dist/triage/index.d.ts",
+      "import": "./dist/triage/index.js",
+      "default": "./src/triage/index.ts"
     }
   },
   "files": [

@@ -54,3 +54,21 @@ export const IncidentCancelledSchema = EnvelopeSchema.extend({
   cancelledBy: z.string().min(1),
 });
 export type IncidentCancelled = z.infer<typeof IncidentCancelledSchema>;
+
+/**
+ * Fanout-only metadata event: the incident service emits this after upserting
+ * the `ai_triage_suggestions` row so the WS forwarder can push the chip to
+ * subscribed consoles. NOT a lifecycle/domain event — the AI suggestion is
+ * informational and does not advance the aggregate's version. We deliberately
+ * skip `baseIncident.version` for that reason: the chip is keyed on
+ * `(incidentId, modelVersion)` in the read model, not on aggregate version.
+ */
+export const IncidentAiSuggestionUpdatedSchema = EnvelopeSchema.extend({
+  incidentId: z.string().uuid(),
+  tier: z.enum(['police', 'medical', 'fire']),
+  severity: z.enum(['low', 'medium', 'high', 'critical']),
+  confidence: z.number().min(0).max(1),
+  rationale: z.string().max(200),
+  modelVersion: z.string().min(1),
+});
+export type IncidentAiSuggestionUpdated = z.infer<typeof IncidentAiSuggestionUpdatedSchema>;
