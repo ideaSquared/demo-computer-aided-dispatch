@@ -37,7 +37,13 @@ export async function migrate(opts: { databaseUrl: string; schema: string }): Pr
     try {
       const result = await runner({
         databaseUrl: opts.databaseUrl,
-        schema: opts.schema,
+        // PostGIS installs into `public` by convention (shared across
+        // services). Setting search_path to just the geo schema hides
+        // the `geography`/`geometry` types + the GiST KNN operator,
+        // so the init migration explodes with `type "geography" does
+        // not exist`. Listing both schemas keeps geo's own tables in
+        // `geo` while letting PostGIS types resolve unqualified.
+        schema: [opts.schema, 'public'],
         migrationsSchema: opts.schema,
         createSchema: true,
         migrationsTable: 'pgmigrations',
