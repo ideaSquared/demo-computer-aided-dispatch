@@ -125,6 +125,20 @@ message Incident {
   string opened_at = 9;   // RFC3339; envelope timestamps stay strings on the wire.
   string updated_at = 10;
   int64 version = 11;
+  // PR 3b: the AI classifier's latest suggestion for this incident, if any.
+  // Optional — absent for incidents the classifier hasn't run on or for
+  // suggestions that failed (severity=UNSPECIFIED). The gateway surfaces it
+  // as a JSON `aiSuggestion` field; the console renders an "AI suggested"
+  // chip; the operator's manual triage form remains authoritative.
+  AiTriageSuggestion ai_suggestion = 12;
+}
+
+message AiTriageSuggestion {
+  Severity severity = 1;
+  double confidence = 2;   // 0..1
+  string rationale = 3;    // model-generated short text
+  string model_version = 4; // e.g. "llama3.2:3b:v1"
+  string received_at = 5;  // RFC3339; when the chip landed.
 }
 
 // ---- enums -----------------------------------------------------------------
