@@ -24,6 +24,7 @@ on:
       - "tools/scripts/enforce-smoke.ts"
       - "tools/scripts/audit-smoke.ts"
       - "tools/scripts/triage-stub-smoke.ts"
+      - "tools/scripts/triage-classify-smoke.ts"
       - ".dockerignore"
 
 concurrency:
@@ -37,7 +38,9 @@ jobs:
   smoke:
     name: smoke
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # PR 3b: bumped from 20 → 30 to absorb the Ollama model pull + cold
+    # generation on a CPU-only runner.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v6
@@ -129,10 +132,18 @@ jobs:
         run: pnpm smoke:audit
       # Phase 5 PR 3a: polyglot triage seam. Dispatcher logs in, posts to
       # /api/triage/classify, gateway proxies to the Python gRPC service,
-      # the stub responds. PR 3b will swap the stub for the Ollama call
-      # and this smoke's assertions will then fail (canned shape changes).
-      - name: Triage-stub smoke (gateway → triage gRPC stub)
+      # the real Ollama-backed classifier responds. PR 3a's exact-shape
+      # assertions were relaxed in PR 3b — the smoke now pins the contract
+      # SHAPE (lowercase enums, in-range confidence) since the stub is gone.
+      - name: Triage-stub smoke (gateway → triage gRPC)
         run: pnpm smoke:triage-stub
+      # Phase 5 PR 3b: the full AI loop. Open an incident, wait for the
+      # triage subscriber to publish, the incident subscriber to upsert,
+      # and the chip to surface on GET /api/incidents/:id. Ollama can be
+      # slow on a cold runner; the smoke gives ~60s for the chip to land.
+      - name: Triage-classify smoke (incident.opened → triage → chip)
+        run: pnpm smoke:triage-classify
+        timeout-minutes: 5
       - name: Dump container logs on failure
         if: failure()
         run: |
@@ -160,7 +171,9 @@ jobs:
   dev-stack:
     name: dev-stack
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # PR 3b: bumped from 20 → 30 to absorb the Ollama model pull + cold
+    # generation on a CPU-only runner.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v6
@@ -255,10 +268,18 @@ jobs:
         run: pnpm smoke:audit
       # Phase 5 PR 3a: polyglot triage seam. Dispatcher logs in, posts to
       # /api/triage/classify, gateway proxies to the Python gRPC service,
-      # the stub responds. PR 3b will swap the stub for the Ollama call
-      # and this smoke's assertions will then fail (canned shape changes).
-      - name: Triage-stub smoke (gateway → triage gRPC stub)
+      # the real Ollama-backed classifier responds. PR 3a's exact-shape
+      # assertions were relaxed in PR 3b — the smoke now pins the contract
+      # SHAPE (lowercase enums, in-range confidence) since the stub is gone.
+      - name: Triage-stub smoke (gateway → triage gRPC)
         run: pnpm smoke:triage-stub
+      # Phase 5 PR 3b: the full AI loop. Open an incident, wait for the
+      # triage subscriber to publish, the incident subscriber to upsert,
+      # and the chip to surface on GET /api/incidents/:id. Ollama can be
+      # slow on a cold runner; the smoke gives ~60s for the chip to land.
+      - name: Triage-classify smoke (incident.opened → triage → chip)
+        run: pnpm smoke:triage-classify
+        timeout-minutes: 5
       - name: Dump container logs on failure
         if: failure()
         run: |
