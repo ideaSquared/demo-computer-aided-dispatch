@@ -193,10 +193,15 @@ export function registerUnitRoutes(
   app.get('/api/units', async (req, reply) => {
     const query = ListQuerySchema.safeParse(req.query);
     if (!query.success) return replyValidation(reply, query.error);
-    const session = await requireAbility(req, reply, gate, 'view', {
-      kind: 'Unit',
-      tier: query.data.tier,
-    });
+    // Same shape as the unscoped incident list: bare `Unit` subject when no
+    // `?tier=` filter is supplied so observers (tier-scoped view) pass; with
+    // a `?tier=` filter, gate against that tier explicitly.
+    const session = query.data.tier
+      ? await requireAbility(req, reply, gate, 'view', {
+          kind: 'Unit',
+          tier: query.data.tier,
+        })
+      : await requireAbility(req, reply, gate, 'view', { kind: 'Unit' });
     if (!session) return reply;
     try {
       const res = await client.listUnits(

@@ -250,10 +250,17 @@ export function registerIncidentRoutes(
   app.get('/api/incidents', async (req, reply) => {
     const query = ListQuerySchema.safeParse(req.query);
     if (!query.success) return replyValidation(reply, query.error);
-    const session = await requireAbility(req, reply, gate, 'view', {
-      kind: 'Incident',
-      tier: query.data.tier,
-    });
+    // Unscoped list: gate on `Incident` without a tier instance so any
+    // operator with *some* view rule passes (observer has a tier-scoped
+    // view rule; the bare-string check ignores conditions). When a `?tier=`
+    // filter IS supplied, gate against that tier explicitly. The handler
+    // re-checks per-incident on read.
+    const session = query.data.tier
+      ? await requireAbility(req, reply, gate, 'view', {
+          kind: 'Incident',
+          tier: query.data.tier,
+        })
+      : await requireAbility(req, reply, gate, 'view', { kind: 'Incident' });
     if (!session) return reply;
     try {
       const res = await client.listOpen(
