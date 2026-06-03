@@ -11,10 +11,15 @@ export const subjects = {
   IncidentUnitArrived: 'incident.unitArrived',
   IncidentResolved: 'incident.resolved',
   IncidentCancelled: 'incident.cancelled',
+  IncidentAiSuggestionUpdated: 'incident.aiSuggestionUpdated',
   UnitRegistered: 'unit.registered',
   UnitStatusChanged: 'unit.statusChanged',
   AuditActionTaken: 'audit.actionTaken',
   PresenceChanged: 'presence.changed',
+  // Triage classifier output — emitted by service.triage, consumed by
+  // service.incident (which upserts the suggestion row + re-publishes
+  // incident.aiSuggestionUpdated for the WS fan-out).
+  TriageClassified: 'triage.classified',
   // Auth events — emitted by service.auth, consumed by service.audit. Not
   // wired into `topicsFor` until a console-side consumer needs them.
   AuthLoginSuccess: 'auth.login.success',

@@ -5,6 +5,7 @@ import type { Identity } from '../presence/identity.js';
 import type { Incident, IncidentApi, Severity, Tier } from '../services/incident.js';
 import { TIERS } from '../services/incident.js';
 import type { Unit } from '../services/units.js';
+import { AiSuggestionChip } from './AiSuggestionChip.js';
 import { bindIncidentActions, IncidentActions } from './IncidentActions.js';
 import * as styles from './IncidentBoard.css.js';
 import type { UseIncidentsResult } from './useIncidents.js';
@@ -154,9 +155,24 @@ function IncidentRow({
   onCancel: (reason: string) => void;
   incidentApi?: IncidentApi | undefined;
 }) {
+  // The "Apply" button on the chip pre-fills the operator's triage
+  // selection — it doesn't auto-submit. We only wire it on incidents the
+  // operator can still triage; for everything else the chip stays
+  // informational.
+  const canApply = incident.state === 'open';
   return (
     <div className={styles.row}>
-      <div className={styles.title}>{incident.title}</div>
+      <div className={styles.title}>
+        <div>{incident.title}</div>
+        {incident.aiSuggestion ? (
+          <div className={styles.aiSuggestion}>
+            <AiSuggestionChip
+              suggestion={incident.aiSuggestion}
+              onApply={canApply ? onTriage : undefined}
+            />
+          </div>
+        ) : null}
+      </div>
       <div className={styles.meta}>{incident.tier}</div>
       <div>
         <span className={styles.stateBadge({ state: incident.state })}>{incident.state}</span>

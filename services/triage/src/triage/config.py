@@ -1,8 +1,7 @@
 """Strict environment loading. The ONLY place os.environ is read.
 
-PR 3a introduces `GRPC_PORT` for the gRPC server alongside FastAPI's `PORT`.
-The `OLLAMA_*` envs are read here even though PR 3a's classifier is a stub
-— so PR 3b only changes `classify.py`, not env wiring.
+PR 3a introduced `GRPC_PORT` and the `OLLAMA_*` envs. PR 3b adds `NATS_URL`
+for the `incident.opened` → `triage.classified` subscriber loop.
 """
 
 from __future__ import annotations
@@ -17,6 +16,7 @@ class Config:
     grpc_port: int
     ollama_url: str
     ollama_model: str
+    nats_url: str
     otel_endpoint: str | None
 
     @classmethod
@@ -26,6 +26,7 @@ class Config:
             grpc_port=int(os.environ.get("GRPC_PORT", "5081")),
             ollama_url=os.environ.get("OLLAMA_URL", "http://ollama:11434"),
             ollama_model=os.environ.get("OLLAMA_MODEL", "llama3.2:3b"),
+            nats_url=os.environ.get("NATS_URL", "nats://nats:4222"),
             otel_endpoint=os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT"),
         )
 

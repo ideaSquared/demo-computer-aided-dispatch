@@ -131,22 +131,28 @@ async function main(): Promise<void> {
   const got = await classifyOnce(token);
   console.log(`[triage-stub-smoke] classify response ${JSON.stringify(got)}`);
 
-  // Pin the stub shape EXACTLY — PR 3b's swap should make this fail.
-  if (got.severity !== 'medium') {
-    throw new Error(`expected severity=medium, got ${got.severity}`);
+  // PR 3b: the stub is gone — the real Ollama-backed classifier responds. We
+  // pin the CONTRACT SHAPE (lowercase enums, in-range confidence,
+  // model-version prefix) but not the model's actual output (which is
+  // variable and flakes CI on tight assertions).
+  const allowedSeverities = new Set(['low', 'medium', 'high', 'critical', 'unspecified']);
+  if (!allowedSeverities.has(got.severity)) {
+    throw new Error(`expected severity ∈ wire vocabulary, got ${got.severity}`);
   }
-  if (got.confidence !== 0.5) {
-    throw new Error(`expected confidence=0.5, got ${got.confidence}`);
+  if (typeof got.confidence !== 'number' || got.confidence < 0 || got.confidence > 1) {
+    throw new Error(`expected confidence ∈ [0,1], got ${got.confidence}`);
   }
-  if (got.rationale !== 'stub') {
-    throw new Error(`expected rationale='stub', got '${got.rationale}'`);
+  if (typeof got.rationale !== 'string') {
+    throw new Error(`expected string rationale, got ${typeof got.rationale}`);
   }
-  if (got.modelVersion !== 'stub-0.0.0') {
-    throw new Error(`expected modelVersion='stub-0.0.0', got '${got.modelVersion}'`);
+  if (!got.modelVersion.startsWith('llama3.2:3b:')) {
+    throw new Error(
+      `expected modelVersion to start with 'llama3.2:3b:', got '${got.modelVersion}'`,
+    );
   }
 
   console.log(
-    `SERVING  ${GATEWAY_BASE} — triage stub end-to-end (proto → Python → gRPC → gateway → http) OK`,
+    `SERVING  ${GATEWAY_BASE} — triage classifier end-to-end (proto → Python → gRPC → gateway → http) OK`,
   );
   process.exit(0);
 }

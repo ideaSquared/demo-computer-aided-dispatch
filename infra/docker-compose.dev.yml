@@ -228,9 +228,14 @@ services:
       GRPC_PORT: "5081"
       OLLAMA_URL: http://ollama:11434
       OLLAMA_MODEL: llama3.2:3b
+      NATS_URL: nats://nats:4222
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
     depends_on:
       ollama:
+        condition: service_healthy
+      ollama-init:
+        condition: service_completed_successfully
+      nats:
         condition: service_healthy
     restart: unless-stopped
     develop:
@@ -241,9 +246,7 @@ services:
         - { action: rebuild, path: ../services/triage/pyproject.toml }
         - { action: rebuild, path: ../packages/proto/cad/triage }
 
-  # Local LLM runtime for service.triage. Identical to the production
-  # stack: PR 3a doesn't pull a model (the stub classifier doesn't need
-  # one); PR 3b will add the pull step.
+  # Local LLM runtime for service.triage. Identical to the production stack.
   ollama:
     image: ollama/ollama:latest
     ports:
@@ -256,6 +259,20 @@ services:
       timeout: 5s
       retries: 10
     restart: unless-stopped
+
+  # One-shot model pull, mirroring the production stack. Runs once per
+  # `down -v` cycle (the model is cached on the cad-ollama volume); a
+  # subsequent `ollama pull` no-ops when the model is already present.
+  ollama-init:
+    image: ollama/ollama:latest
+    depends_on:
+      ollama:
+        condition: service_healthy
+    entrypoint:
+      - sh
+      - -c
+      - 'OLLAMA_HOST=http://ollama:11434 ollama pull llama3.2:3b'
+    restart: 'no'
 
 volumes:
   cad-ollama:

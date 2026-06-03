@@ -75,6 +75,25 @@ const PROTO_TO_STATE: Record<IncidentV1.IncidentState, WireState | null> = {
 
 // --- response shape --------------------------------------------------------
 
+/**
+ * Phase 5 PR 3b: optional AI classifier suggestion. Informational only — the
+ * operator's manual triage form remains authoritative. `null` when:
+ *   - the classifier hasn't run on the incident yet, or
+ *   - it produced `UNSPECIFIED` (the no-hint sentinel — the subscriber skips
+ *     persisting these so they never reach us, but we defend in depth here).
+ *
+ * The `severity` enum here deliberately doesn't include 'unspecified': if a
+ * stray UNSPECIFIED ever surfaced from the incident service, `toJson`
+ * returns `aiSuggestion: null` so the console renders no chip.
+ */
+interface AiSuggestionJson {
+  severity: WireSeverity;
+  confidence: number;
+  rationale: string;
+  modelVersion: string;
+  receivedAt: string;
+}
+
 interface IncidentJson {
   id: string;
   title: string;
@@ -87,6 +106,7 @@ interface IncidentJson {
   openedAt: string;
   updatedAt: string;
   version: number;
+  aiSuggestion: AiSuggestionJson | null;
 }
 
 function toJson(incident: Incident): IncidentJson {
@@ -98,6 +118,22 @@ function toJson(incident: Incident): IncidentJson {
     // truthy check rules out both `null` (UNSPECIFIED) and `undefined`
     // (noUncheckedIndexedAccess gives every Record lookup `| undefined`).
     throw new Error('incident service returned an unspecified tier or state');
+  }
+  // Map the AI suggestion sub-message if present + severity is one of the
+  // four real bands. Anything else (missing message, UNSPECIFIED severity)
+  // surfaces as `aiSuggestion: null` so the console renders no chip.
+  let aiSuggestion: AiSuggestionJson | null = null;
+  if (incident.aiSuggestion) {
+    const aiSev = PROTO_TO_SEVERITY[incident.aiSuggestion.severity];
+    if (aiSev !== null) {
+      aiSuggestion = {
+        severity: aiSev,
+        confidence: incident.aiSuggestion.confidence,
+        rationale: incident.aiSuggestion.rationale,
+        modelVersion: incident.aiSuggestion.modelVersion,
+        receivedAt: incident.aiSuggestion.receivedAt,
+      };
+    }
   }
   return {
     id: incident.id,
@@ -111,6 +147,7 @@ function toJson(incident: Incident): IncidentJson {
     openedAt: incident.openedAt,
     updatedAt: incident.updatedAt,
     version: Number(incident.version),
+    aiSuggestion,
   };
 }
 

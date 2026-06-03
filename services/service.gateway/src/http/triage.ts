@@ -25,7 +25,10 @@ import { type GateDeps, operatorMetadata, requireAbility } from './gate.js';
 
 const TierSchema = z.enum(['police', 'medical', 'fire']);
 type WireTier = z.infer<typeof TierSchema>;
-type WireSeverity = 'low' | 'medium' | 'high' | 'critical';
+// `unspecified` is included for the synchronous /classify response — the
+// async fan-out into `incident.aiSuggestion` filters it out before persisting,
+// so the chip never renders an UNSPECIFIED. See PROTO_TO_SEVERITY below.
+type WireSeverity = 'unspecified' | 'low' | 'medium' | 'high' | 'critical';
 
 const TIER_TO_PROTO: Record<WireTier, TriageV1.ServiceTier> = {
   police: TriageV1.ServiceTier.POLICE,
@@ -33,8 +36,14 @@ const TIER_TO_PROTO: Record<WireTier, TriageV1.ServiceTier> = {
   fire: TriageV1.ServiceTier.FIRE,
 };
 
-const PROTO_TO_SEVERITY: Record<TriageV1.Severity, WireSeverity | null> = {
-  [TriageV1.Severity.UNSPECIFIED]: null,
+const PROTO_TO_SEVERITY: Record<TriageV1.Severity, WireSeverity> = {
+  // PR 3b: triage's resilience contract returns UNSPECIFIED when the model
+  // produces malformed output / Ollama is unreachable / input is empty. We
+  // surface that to the caller as the literal `'unspecified'` wire string
+  // rather than 500-ing — the synchronous /classify caller can decide
+  // whether to retry, fall back, or shrug. The smoke + console
+  // already treat `'unspecified'` as a valid result-shape value.
+  [TriageV1.Severity.UNSPECIFIED]: 'unspecified',
   [TriageV1.Severity.LOW]: 'low',
   [TriageV1.Severity.MEDIUM]: 'medium',
   [TriageV1.Severity.HIGH]: 'high',
@@ -121,14 +130,12 @@ export function registerTriageRoutes(
         },
         operatorMetadata(session),
       );
-      const severity = PROTO_TO_SEVERITY[res.severity];
-      if (!severity) {
-        // The triage service never emits UNSPECIFIED; treat as upstream
-        // contract violation rather than guessing.
-        throw new Error('triage service returned an unspecified severity');
-      }
       const json: SuggestionJson = {
-        severity,
+        // UNSPECIFIED is mapped to `'unspecified'` (see PROTO_TO_SEVERITY) —
+        // the model errored / Ollama was unreachable / input was empty.
+        // The synchronous /classify caller can retry or shrug; the chip
+        // pipeline (incident subscriber) drops UNSPECIFIED upstream.
+        severity: PROTO_TO_SEVERITY[res.severity],
         confidence: res.confidence,
         rationale: res.rationale,
         modelVersion: res.modelVersion,

@@ -8,6 +8,7 @@ export default defineConfig({
     'src/incident/index.ts',
     'src/resource/index.ts',
     'src/presence/index.ts',
+    'src/triage/index.ts',
   ],
   format: ['esm'],
   dts: true,

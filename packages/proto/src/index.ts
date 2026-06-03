@@ -58,6 +58,7 @@ export type {
 } from '../gen/ts/cad/geo/v1/geo.js';
 export * as GeoV1 from '../gen/ts/cad/geo/v1/geo.js';
 export type {
+  AiTriageSuggestion,
   CancelRequest,
   CancelResponse,
   DispatchRequest,
