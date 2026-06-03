@@ -18,6 +18,7 @@ on:
       - "tools/scripts/resource-http-smoke.ts"
       - "tools/scripts/dispatch-loop-smoke.ts"
       - "tools/scripts/recommend-smoke.ts"
+      - "tools/scripts/geo-smoke.ts"
       - "tools/scripts/lifecycle-smoke.ts"
       - "tools/scripts/auth-smoke.ts"
       - "tools/scripts/enforce-smoke.ts"
@@ -92,6 +93,12 @@ jobs:
       # via the dispatch service (incident Get + resource ListUnits → ranking).
       - name: Recommend-units smoke (gateway)
         run: pnpm smoke:recommend
+      # Phase 5 geo: PostGIS-backed NearestK end-to-end. Registers two
+      # fire units at known coords, opens a fire incident, and asserts
+      # the recommender (now backed by geo.NearestK) ranks the near unit
+      # first with realistic distances.
+      - name: Geo NearestK smoke (gateway → dispatch → geo)
+        run: pnpm smoke:geo
       # Phase 3 lifecycle loop: an assigned unit's enRoute / onScene reports
       # drive the incident to enRoute / onScene via the NATS subscriber.
       - name: Unit-movement→incident-lifecycle smoke
@@ -202,6 +209,12 @@ jobs:
       # via the dispatch service (incident Get + resource ListUnits → ranking).
       - name: Recommend-units smoke (gateway)
         run: pnpm smoke:recommend
+      # Phase 5 geo: PostGIS-backed NearestK end-to-end. Registers two
+      # fire units at known coords, opens a fire incident, and asserts
+      # the recommender (now backed by geo.NearestK) ranks the near unit
+      # first with realistic distances.
+      - name: Geo NearestK smoke (gateway → dispatch → geo)
+        run: pnpm smoke:geo
       # Phase 3 lifecycle loop: an assigned unit's enRoute / onScene reports
       # drive the incident to enRoute / onScene via the NATS subscriber.
       - name: Unit-movement→incident-lifecycle smoke
