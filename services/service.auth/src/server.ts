@@ -33,6 +33,33 @@ const db = createDbClient({ url: config.DATABASE_URL, schema: config.DB_SCHEMA }
 const nats = await connect(config.NATS_URL);
 app.log.info({ database: config.DATABASE_URL, nats: config.NATS_URL }, 'connected to deps');
 
+// 2b. DEV_MODE seed-on-boot. The console's dev role switcher renders cards
+//     for every operator in SEEDED_OPERATORS — clicking one logs in with the
+//     seeded cleartext password. That round-trip requires the matching row
+//     to exist in the `operators` table; the in-memory list alone isn't
+//     enough. Upsert is idempotent (same email → same id, password re-hashed
+//     on rerun), so this is safe to run on every boot.
+//
+//     Production deploys set DEV_MODE=false; this block then skips entirely
+//     and the only way to create an operator is the gRPC admin path (Phase 6).
+if (config.DEV_MODE) {
+  app.log.warn(
+    'DEV_MODE=true — seeding canonical operators into the database. Never set this in production.',
+  );
+  for (const op of SEEDED_OPERATORS) {
+    const passwordHash = await bcrypt.hash(op.password, 10);
+    await upsertOperator(db, {
+      id: randomUUID(),
+      email: op.email,
+      passwordHash,
+      displayName: op.displayName,
+      tier: op.tier,
+      roles: op.roles,
+    });
+  }
+  app.log.info({ count: SEEDED_OPERATORS.length }, 'seeded operators upserted');
+}
+
 // 3. Wire-agnostic core. Both the gRPC server below and the dev-only HTTP
 //    routes (further down) call into the same operations.
 const core = {
