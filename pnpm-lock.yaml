@@ -532,9 +532,21 @@ importers:
       '@cad/proto':
         specifier: workspace:*
         version: link:../../packages/proto
+      '@grpc/grpc-js':
+        specifier: ^1.13.6
+        version: 1.14.4
       fastify:
         specifier: ^5.8.5
         version: 5.8.5
+      nats:
+        specifier: ^2.29.1
+        version: 2.29.3
+      node-pg-migrate:
+        specifier: ^8.0.4
+        version: 8.0.4(@types/pg@8.15.6)(pg@8.21.0)
+      postgres:
+        specifier: ^3.4.9
+        version: 3.4.9
       zod:
         specifier: ^4.4.3
         version: 4.4.3
