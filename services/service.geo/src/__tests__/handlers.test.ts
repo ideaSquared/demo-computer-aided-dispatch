@@ -1,3 +1,4 @@
+import type { NearestKRequest, NearestKResponse } from '@cad/proto';
 import { GeoV1 } from '@cad/proto';
 import * as grpc from '@grpc/grpc-js';
 import { describe, expect, it, vi } from 'vitest';
@@ -37,15 +38,15 @@ describe('geo gRPC handler — NearestK', () => {
     const spy = vi.spyOn(repo, 'nearestK').mockResolvedValue(rows);
     const handlers = createHandlers({ db: fakeDb });
 
-    const result = await new Promise<GeoV1.NearestKResponse>((resolve, reject) => {
+    const result = await new Promise<NearestKResponse>((resolve, reject) => {
       handlers.nearestK(
-        call<GeoV1.NearestKRequest>({
+        call<NearestKRequest>({
           origin: { lat: 51.508, lng: -0.128 },
           tier: GeoV1.ServiceTier.FIRE,
           status: GeoV1.UnitStatus.AVAILABLE,
           k: 3,
         }),
-        (err, res) => (err ? reject(err) : resolve(res as GeoV1.NearestKResponse)),
+        (err, res) => (err ? reject(err) : resolve(res as NearestKResponse)),
       );
     });
 
@@ -64,7 +65,7 @@ describe('geo gRPC handler — NearestK', () => {
 
     await new Promise<void>((resolve, reject) => {
       handlers.nearestK(
-        call<GeoV1.NearestKRequest>({
+        call<NearestKRequest>({
           origin: { lat: 0, lng: 0 },
           tier: GeoV1.ServiceTier.UNSPECIFIED,
           status: GeoV1.UnitStatus.UNSPECIFIED,
@@ -86,7 +87,7 @@ describe('geo gRPC handler — NearestK', () => {
 
     await new Promise<void>((resolve, reject) => {
       handlers.nearestK(
-        call<GeoV1.NearestKRequest>({
+        call<NearestKRequest>({
           origin: { lat: 0, lng: 0 },
           tier: GeoV1.ServiceTier.UNSPECIFIED,
           status: GeoV1.UnitStatus.UNSPECIFIED,
@@ -107,7 +108,7 @@ describe('geo gRPC handler — NearestK', () => {
     type ErrLike = { code?: number } | null;
     const err = await new Promise<ErrLike>((resolve) => {
       handlers.nearestK(
-        call<GeoV1.NearestKRequest>({
+        call<NearestKRequest>({
           origin: undefined,
           tier: GeoV1.ServiceTier.UNSPECIFIED,
           status: GeoV1.UnitStatus.UNSPECIFIED,
@@ -126,7 +127,7 @@ describe('geo gRPC handler — NearestK', () => {
 
     await new Promise<void>((resolve, reject) => {
       handlers.nearestK(
-        call<GeoV1.NearestKRequest>({
+        call<NearestKRequest>({
           origin: { lat: 1, lng: 2 },
           tier: GeoV1.ServiceTier.MEDICAL,
           status: GeoV1.UnitStatus.AVAILABLE,

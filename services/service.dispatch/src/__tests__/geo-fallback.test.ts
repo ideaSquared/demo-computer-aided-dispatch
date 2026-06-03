@@ -1,10 +1,12 @@
 import type {
   GetRequest,
   GetResponse,
+  Incident,
   ListUnitsRequest,
   ListUnitsResponse,
   NearestKRequest,
   NearestKResponse,
+  Unit,
 } from '@cad/proto';
 import { GeoV1, IncidentV1, ResourceV1 } from '@cad/proto';
 import * as grpc from '@grpc/grpc-js';
@@ -16,7 +18,7 @@ import { createHandlers } from '../grpc/handlers.js';
 // readers — each test wires its own behaviour into `nearestK`,
 // `listUnits`, and `get`.
 
-function fakeIncident(): IncidentV1.Incident {
+function fakeIncident(): Incident {
   return {
     id: 'inc-1',
     title: 't',
@@ -41,7 +43,7 @@ function makeIncidentReader(): IncidentReader {
   };
 }
 
-function makeResourceReader(units: ResourceV1.Unit[]): ResourceReader {
+function makeResourceReader(units: Unit[]): ResourceReader {
   return {
     listUnits: vi
       .fn<(req: ListUnitsRequest) => Promise<ListUnitsResponse>>()
@@ -65,7 +67,7 @@ function unavailableError(): grpc.ServiceError {
   });
 }
 
-function makeUnit(id: string, lat: number, lng: number): ResourceV1.Unit {
+function makeUnit(id: string, lat: number, lng: number): Unit {
   return {
     id,
     callsign: id.toUpperCase(),
