@@ -1,8 +1,7 @@
 import '@testing-library/jest-dom/vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { AuthProvider } from '../auth/AuthProvider.js';
-import { STORAGE_KEY } from '../auth/session.js';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { AuthProvider, useAuth } from '../auth/AuthProvider.js';
 import { LoginPage } from '../pages/LoginPage.js';
 
 /**
@@ -10,6 +9,10 @@ import { LoginPage } from '../pages/LoginPage.js';
  * picks the wrong app should bounce back with an error, not land on an
  * empty MyUnitPage. These tests pin both ends of the gate — the seed-
  * switcher filter and the manual-form rejection.
+ *
+ * Auth runs on HttpOnly cookies now, so there's no localStorage to assert
+ * against — we observe the in-memory session via `useAuth()` instead. The
+ * `/api/auth/me` boot probe is mocked to 401 so each test starts anonymous.
  */
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -19,13 +22,17 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
+function SessionProbe() {
+  const { session } = useAuth();
+  return <div data-testid="who">{session?.operator.email ?? 'anon'}</div>;
+}
+
 function responderLoginPayload() {
   return {
-    accessToken: 'access-1',
-    refreshToken: 'refresh-1',
     expiresAt: new Date(Date.now() + 60 * 60_000).toISOString(),
     sessionId: 'sess-1',
     abilityJson: '[]',
+    csrfToken: 'csrf-1',
     operator: {
       id: 'op-rsp',
       email: 'rsp.fire@cad.local',
@@ -39,11 +46,10 @@ function responderLoginPayload() {
 
 function dispatcherLoginPayload() {
   return {
-    accessToken: 'access-1',
-    refreshToken: 'refresh-1',
     expiresAt: new Date(Date.now() + 60 * 60_000).toISOString(),
     sessionId: 'sess-1',
     abilityJson: '[]',
+    csrfToken: 'csrf-1',
     operator: {
       id: 'op-dis',
       email: 'dispatch.fire@cad.local',
@@ -56,9 +62,6 @@ function dispatcherLoginPayload() {
 }
 
 describe('LoginPage', () => {
-  beforeEach(() => {
-    window.localStorage.clear();
-  });
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
@@ -67,6 +70,7 @@ describe('LoginPage', () => {
   it('hides non-responder personas from the dev role switcher', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = typeof input === 'string' ? input : input.toString();
+      if (url.endsWith('/api/auth/me')) return jsonResponse({}, 401);
       if (url.endsWith('/api/auth/seeded-operators')) {
         return jsonResponse({
           seededOperators: [
@@ -105,6 +109,7 @@ describe('LoginPage', () => {
   it('rejects a successful dispatcher login with a clear error', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
       const url = typeof input === 'string' ? input : input.toString();
+      if (url.endsWith('/api/auth/me')) return jsonResponse({}, 401);
       if (url.endsWith('/api/auth/seeded-operators')) {
         return jsonResponse({ seededOperators: [] });
       }
@@ -116,6 +121,7 @@ describe('LoginPage', () => {
     render(
       <AuthProvider>
         <LoginPage />
+        <SessionProbe />
       </AuthProvider>,
     );
     await waitFor(() => screen.getByLabelText('email'));
@@ -129,14 +135,15 @@ describe('LoginPage', () => {
     await waitFor(() => {
       expect(screen.getByRole('alert')).toHaveTextContent(/responders only/i);
     });
-    // Session must NOT have been persisted — a manual page reload should
-    // land back on the login page, not on MyUnit.
-    expect(window.localStorage.getItem(STORAGE_KEY)).toBeNull();
+    // Session must NOT have been established — a wrong-role login is rejected
+    // at the boundary, leaving the app anonymous (back on the login page).
+    expect(screen.getByTestId('who')).toHaveTextContent('anon');
   });
 
-  it('persists a responder login and clears the form busy state', async () => {
+  it('establishes a responder session and clears the form busy state', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
       const url = typeof input === 'string' ? input : input.toString();
+      if (url.endsWith('/api/auth/me')) return jsonResponse({}, 401);
       if (url.endsWith('/api/auth/seeded-operators')) {
         return jsonResponse({ seededOperators: [] });
       }
@@ -148,6 +155,7 @@ describe('LoginPage', () => {
     render(
       <AuthProvider>
         <LoginPage />
+        <SessionProbe />
       </AuthProvider>,
     );
     await waitFor(() => screen.getByLabelText('email'));
@@ -159,7 +167,7 @@ describe('LoginPage', () => {
       fireEvent.click(screen.getByRole('button', { name: /sign in/i }));
     });
     await waitFor(() => {
-      expect(window.localStorage.getItem(STORAGE_KEY)).toContain('rsp.fire@cad.local');
+      expect(screen.getByTestId('who')).toHaveTextContent('rsp.fire@cad.local');
     });
   });
 });
