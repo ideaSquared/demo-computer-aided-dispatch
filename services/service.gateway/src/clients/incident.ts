@@ -1,6 +1,8 @@
 import type {
   CancelRequest,
   CancelResponse,
+  DeclareMajorRequest,
+  DeclareMajorResponse,
   DispatchRequest,
   DispatchResponse,
   GetRequest,
@@ -37,6 +39,7 @@ export interface IncidentClient {
   ): Promise<RecordUnitArrivalResponse>;
   resolve(req: ResolveRequest, md?: grpc.Metadata): Promise<ResolveResponse>;
   cancel(req: CancelRequest, md?: grpc.Metadata): Promise<CancelResponse>;
+  declareMajor(req: DeclareMajorRequest, md?: grpc.Metadata): Promise<DeclareMajorResponse>;
   get(req: GetRequest, md?: grpc.Metadata): Promise<GetResponse>;
   listOpen(req: ListOpenRequest, md?: grpc.Metadata): Promise<ListOpenResponse>;
   close(): void;
@@ -70,6 +73,8 @@ export function createIncidentClient(url: string): IncidentClient {
       call<RecordUnitArrivalRequest, RecordUnitArrivalResponse>(client.recordUnitArrival, req, md),
     resolve: (req, md) => call<ResolveRequest, ResolveResponse>(client.resolve, req, md),
     cancel: (req, md) => call<CancelRequest, CancelResponse>(client.cancel, req, md),
+    declareMajor: (req, md) =>
+      call<DeclareMajorRequest, DeclareMajorResponse>(client.declareMajor, req, md),
     get: (req, md) => call<GetRequest, GetResponse>(client.get, req, md),
     listOpen: (req, md) => call<ListOpenRequest, ListOpenResponse>(client.listOpen, req, md),
     close: () => client.close(),
