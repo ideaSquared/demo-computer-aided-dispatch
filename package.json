@@ -45,6 +45,9 @@
     "dev:docker:down": "docker compose -f infra/docker-compose.dev.yml down",
     "stack": "docker compose -f infra/docker-compose.yml up -d --build",
     "stack:down": "docker compose -f infra/docker-compose.yml down",
+    "load-tests": "tools/load-tests/run.sh ws-fanout",
+    "load-tests:http": "tools/load-tests/run.sh http-incidents",
+    "load-tests:e2e": "tools/load-tests/run.sh incident-to-ws",
     "prepare": "husky"
   },
   "devDependencies": {

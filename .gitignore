@@ -61,3 +61,10 @@ services/triage/uv.lock
 
 # Docker
 .docker/
+
+# k6 load-test output (JSON summaries land here). The directory is
+# committed via tools/load-tests/results/.gitkeep so the path exists.
+load-results/
+tools/load-tests/results/*
+!tools/load-tests/results/.gitkeep
+

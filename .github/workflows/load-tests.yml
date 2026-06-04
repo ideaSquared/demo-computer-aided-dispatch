@@ -1,0 +1,106 @@
+name: load-tests
+
+# Manual only — the load-test rig isn't worth running on every PR. Hit
+# "Run workflow" from the Actions tab to spin it up against a fresh
+# compose stack. Results upload as a workflow artifact.
+
+on:
+  workflow_dispatch:
+    inputs:
+      vus:
+        description: "Override K6_VUS for the WS scenarios (blank = scenario default)"
+        required: false
+        default: ""
+      duration:
+        description: "Override K6_DURATION for the WS/E2E scenarios (blank = scenario default)"
+        required: false
+        default: ""
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: 22
+
+jobs:
+  k6:
+    name: k6
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build images
+        run: docker compose -f infra/docker-compose.yml build
+      - name: Boot the stack
+        run: docker compose -f infra/docker-compose.yml up -d
+
+      - name: Wait for the gateway
+        run: |
+          for i in {1..60}; do
+            if curl -fsS http://localhost:5000/health >/dev/null 2>&1; then
+              echo "gateway up."
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "gateway /health not ready within 120s." >&2
+          docker compose -f infra/docker-compose.yml ps -a
+          docker compose -f infra/docker-compose.yml logs --tail=200 service-gateway
+          exit 1
+
+      # The Grafana apt repo + a single apt install. Faster than pulling
+      # the docker image on every run and avoids any --network host
+      # plumbing.
+      - name: Install k6
+        run: |
+          sudo gpg -k
+          sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
+          sudo apt-get update
+          sudo apt-get install -y k6
+
+      - name: Prepare results dir
+        run: mkdir -p load-results
+
+      - name: WS fan-out scenario
+        env:
+          K6_VUS: ${{ inputs.vus }}
+          K6_DURATION: ${{ inputs.duration }}
+        run: k6 run --summary-export load-results/ws-fanout.json tools/load-tests/scenarios/ws-fanout.js
+
+      - name: HTTP incidents scenario
+        run: k6 run --summary-export load-results/http-incidents.json tools/load-tests/scenarios/http-incidents.js
+
+      - name: Incident → WS end-to-end scenario
+        env:
+          K6_DURATION: ${{ inputs.duration }}
+        run: k6 run --summary-export load-results/incident-to-ws.json tools/load-tests/scenarios/incident-to-ws.js
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: load-results
+          path: load-results/
+
+      - name: Dump container logs on failure
+        if: failure()
+        run: |
+          for svc in service-gateway service-auth service-incident service-notification postgres redis nats; do
+            echo "::group::logs $svc"
+            docker compose -f infra/docker-compose.yml logs --no-color --tail=200 "$svc" || true
+            echo '::endgroup::'
+          done
+
+      - name: Tear down
+        if: always()
+        run: docker compose -f infra/docker-compose.yml down -v
