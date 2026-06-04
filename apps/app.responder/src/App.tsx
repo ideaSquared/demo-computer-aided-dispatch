@@ -1,5 +1,5 @@
 import { Button, Stack } from '@cad/lib.ui';
-import { type ReactNode, useMemo, useState } from 'react';
+import { type ReactNode, useState } from 'react';
 import * as styles from './App.css.js';
 import { AuthProvider, useAuth } from './auth/AuthProvider.js';
 import { type Session, wsUrlFor } from './auth/session.js';
@@ -42,7 +42,11 @@ function Gate(): ReactNode {
 type Page = { kind: 'my-unit' } | { kind: 'incident'; incidentId: string };
 
 function Shell({ session }: { session: Session }): ReactNode {
-  const url = useMemo(() => wsUrlFor(session.accessToken), [session.accessToken]);
+  // No token in the URL — the gateway reads the `cad_access` cookie off the
+  // WS upgrade. The whole shell unmounts on logout (the Gate switches to
+  // LoginPage when `session` goes null), so a fresh login means a fresh WS
+  // connection automatically.
+  const url = wsUrlFor();
   const { status, subscribe } = useWs({ url });
   const { logout, switchOperator } = useAuth();
   const [page, setPage] = useState<Page>({ kind: 'my-unit' });

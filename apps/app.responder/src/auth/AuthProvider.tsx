@@ -5,29 +5,35 @@ import {
   useContext,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from 'react';
-import { authedFetch, onUnauthorizedResponse, setAccessToken } from '../services/http.js';
-import {
-  clearStoredSession,
-  LoginResponseSchema,
-  loadStoredSession,
-  persistSession,
-  RESPONDER_ROLE,
-  type Session,
-} from './session.js';
+import { authedFetch, onUnauthorizedResponse } from '../services/http.js';
+import { LoginResponseSchema, MeResponseSchema, RESPONDER_ROLE, type Session } from './session.js';
 
 /**
- * Mobile-field AuthProvider. Same skeleton as `app.console`'s — owns the
- * session, refreshes ~1 minute before `expiresAt`, listens for 401s — with
- * one extra concern: the field UI is responder-only, so a successful login
- * as e.g. a `dispatcher` is *rejected at the boundary* with a clear error
- * (and the session is never persisted). That keeps the UI from rendering
- * controls a non-responder couldn't actually use.
+ * Mobile-field AuthProvider. Same skeleton as `app.console`'s — tokens live
+ * in HttpOnly cookies set by the gateway, so this provider holds only an
+ * in-memory mirror of the operator + sessionId + csrfToken trio. One extra
+ * concern over the console: the field UI is responder-only, so a successful
+ * login as e.g. a `dispatcher` is *rejected at the boundary* with a clear
+ * error. That keeps the UI from rendering controls a non-responder couldn't
+ * actually use.
  *
- * "Responder-only" is enforced here in addition to the server-side CASL
- * gate. The server-side gate is authoritative; this one is just a UX win.
+ * "Responder-only" is enforced here in addition to the server-side CASL gate.
+ * The server-side gate is authoritative; this one is just a UX win.
+ *
+ * Lifecycle:
+ *   - Boot: GET /api/auth/me. If 200 (and still a responder), hydrate; if 401
+ *     or role-downgraded, stay anonymous.
+ *   - Login: POST /api/auth/login. Gateway sets cookies + returns the operator
+ *     JSON; we mirror it (after the responder-role check).
+ *   - 401 from any call → drop in-memory session (cookies are dead server-side).
+ *   - Logout: POST /api/auth/logout. Gateway clears the cookies; we drop the
+ *     mirror.
+ *
+ * No localStorage. No client-side refresh scheduler — the gateway/auth service
+ * owns rotation, and a 401 on any call triggers a logout-and-redirect path the
+ * user can re-login from.
  */
 
 export class WrongRoleError extends Error {
@@ -52,113 +58,55 @@ interface AuthProviderProps {
   readonly children: ReactNode;
 }
 
-// Same lead time as the console — access tokens are 15 minutes, 60s of
-// slack covers the refresh round-trip plus a bit of clock skew.
-const REFRESH_LEAD_MS = 60_000;
-
 export function AuthProvider({ children }: AuthProviderProps): ReactNode {
-  const [session, setSession] = useState<Session | null>(() => loadStoredSession());
+  const [session, setSession] = useState<Session | null>(null);
   const [hydrating, setHydrating] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // 401 from any gateway call → tear down. We DON'T POST /api/auth/logout
+  // here — the server already considers us unauthenticated.
   useEffect(() => {
-    setAccessToken(session?.accessToken ?? null);
-  }, [session]);
-
-  const applySession = useCallback((next: Session | null) => {
-    setSession(next);
-    if (next) {
-      persistSession(next);
-    } else {
-      clearStoredSession();
-    }
+    onUnauthorizedResponse(() => setSession(null));
+    return () => onUnauthorizedResponse(null);
   }, []);
 
-  useEffect(() => {
-    onUnauthorizedResponse(() => applySession(null));
-    return () => onUnauthorizedResponse(null);
-  }, [applySession]);
-
-  const refreshNow = useCallback(
-    async (current: Session): Promise<void> => {
-      try {
-        const res = await authedFetch('/api/auth/refresh', {
-          method: 'POST',
-          body: JSON.stringify({ refreshToken: current.refreshToken }),
-          anonymous: true,
-        });
-        if (!res.ok) {
-          applySession(null);
-          return;
-        }
-        const json: unknown = await res.json();
-        const parsed = LoginResponseSchema.safeParse(json);
-        if (!parsed.success) {
-          applySession(null);
-          return;
-        }
-        // A role downgrade on refresh (e.g. a supervisor took away the
-        // responder role mid-shift) drops the session so the UI bounces
-        // back to LoginPage with a sensible error message.
-        if (!parsed.data.operator.roles.includes(RESPONDER_ROLE)) {
-          applySession(null);
-          return;
-        }
-        applySession(parsed.data);
-      } catch {
-        applySession(null);
-      }
-    },
-    [applySession],
-  );
-
-  useEffect(() => {
-    if (refreshTimer.current) {
-      clearTimeout(refreshTimer.current);
-      refreshTimer.current = null;
-    }
-    if (!session) return;
-    const expiresAt = new Date(session.expiresAt).getTime();
-    if (Number.isNaN(expiresAt)) return;
-    const delay = Math.max(0, expiresAt - Date.now() - REFRESH_LEAD_MS);
-    refreshTimer.current = setTimeout(() => {
-      void refreshNow(session);
-    }, delay);
-    return () => {
-      if (refreshTimer.current) {
-        clearTimeout(refreshTimer.current);
-        refreshTimer.current = null;
-      }
-    };
-  }, [session, refreshNow]);
-
-  // Boot: verify the cached session against /api/auth/me. A revoked-elsewhere
-  // token, a disabled operator, or a role downgrade all fail closed here.
+  // On boot, hit /api/auth/me. The browser auto-sends the access cookie (if
+  // present); 200 means we still have a live session, 401 means we don't. No
+  // localStorage to consult — cookies ARE the persistence.
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const stored = loadStoredSession();
-      if (!stored) {
-        if (!cancelled) setHydrating(false);
-        return;
-      }
-      setAccessToken(stored.accessToken);
       try {
-        const res = await authedFetch('/api/auth/me', { method: 'GET' });
+        const res = await authedFetch('/api/auth/me', { method: 'GET', anonymous: true });
         if (cancelled) return;
         if (!res.ok) {
-          applySession(null);
-        } else if (!stored.operator.roles.includes(RESPONDER_ROLE)) {
-          // Belt-and-braces: the stored session shouldn't be non-responder
-          // (the login flow rejects those) but defend against a localStorage
-          // edit.
-          applySession(null);
-        } else {
-          applySession(stored);
+          setSession(null);
+          return;
         }
+        const json: unknown = await res.json();
+        const parsed = MeResponseSchema.safeParse(json);
+        if (!parsed.success) {
+          setSession(null);
+          return;
+        }
+        // Responder-only: a role downgrade (or a non-responder cookie) fails
+        // closed here, same as the login path.
+        if (!parsed.data.operator.roles.includes(RESPONDER_ROLE)) {
+          setSession(null);
+          return;
+        }
+        // `/me` doesn't return abilityJson today — the LoginResponse does.
+        // Fall back to an empty rules array; the gateway re-validates on every
+        // request anyway, so client-side hints just degrade to "no hints"
+        // until the next login. (Acceptable for boot hydration.)
+        setSession({
+          sessionId: parsed.data.sessionId,
+          abilityJson: '[]',
+          csrfToken: parsed.data.csrfToken,
+          operator: parsed.data.operator,
+        });
       } catch {
-        if (!cancelled) applySession(null);
+        if (!cancelled) setSession(null);
       } finally {
         if (!cancelled) setHydrating(false);
       }
@@ -166,54 +114,54 @@ export function AuthProvider({ children }: AuthProviderProps): ReactNode {
     return () => {
       cancelled = true;
     };
-  }, [applySession]);
+  }, []);
 
-  const login = useCallback<AuthContextValue['login']>(
-    async (input) => {
-      setError(null);
-      const res = await authedFetch('/api/auth/login', {
-        method: 'POST',
-        body: JSON.stringify(input),
-        anonymous: true,
-      });
-      const json: unknown = await res.json().catch(() => undefined);
-      if (!res.ok) {
-        const msg = extractErrorMessage(json) ?? `login failed (${res.status})`;
-        setError(msg);
-        throw new Error(msg);
-      }
-      const parsed = LoginResponseSchema.safeParse(json);
-      if (!parsed.success) {
-        setError('login response malformed');
-        throw new Error('login response malformed');
-      }
-      if (!parsed.data.operator.roles.includes(RESPONDER_ROLE)) {
-        const msg =
-          'this app is for responders only — your account does not have the responder role.';
-        setError(msg);
-        throw new WrongRoleError(msg);
-      }
-      applySession(parsed.data);
-    },
-    [applySession],
-  );
+  const login = useCallback<AuthContextValue['login']>(async (input) => {
+    setError(null);
+    const res = await authedFetch('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify(input),
+      anonymous: true,
+    });
+    const json: unknown = await res.json().catch(() => undefined);
+    if (!res.ok) {
+      const msg = extractErrorMessage(json) ?? `login failed (${res.status})`;
+      setError(msg);
+      throw new Error(msg);
+    }
+    const parsed = LoginResponseSchema.safeParse(json);
+    if (!parsed.success) {
+      setError('login response malformed');
+      throw new Error('login response malformed');
+    }
+    if (!parsed.data.operator.roles.includes(RESPONDER_ROLE)) {
+      const msg =
+        'this app is for responders only — your account does not have the responder role.';
+      setError(msg);
+      throw new WrongRoleError(msg);
+    }
+    setSession({
+      sessionId: parsed.data.sessionId,
+      abilityJson: parsed.data.abilityJson,
+      csrfToken: parsed.data.csrfToken,
+      operator: parsed.data.operator,
+    });
+  }, []);
 
   const logout = useCallback<AuthContextValue['logout']>(async () => {
     if (!session) return;
     try {
-      await authedFetch('/api/auth/logout', {
-        method: 'POST',
-        body: JSON.stringify({ sessionId: session.sessionId }),
-      });
+      // No body — the gateway derives the session id from the access cookie.
+      await authedFetch('/api/auth/logout', { method: 'POST' });
     } catch {
-      /* network errors on logout don't block local teardown */
+      // Network error on logout doesn't block local teardown.
     }
-    applySession(null);
-  }, [session, applySession]);
+    setSession(null);
+  }, [session]);
 
   const switchOperator = useCallback<AuthContextValue['switchOperator']>(() => {
-    applySession(null);
-  }, [applySession]);
+    setSession(null);
+  }, []);
 
   const value = useMemo<AuthContextValue>(
     () => ({ session, hydrating, error, login, logout, switchOperator }),

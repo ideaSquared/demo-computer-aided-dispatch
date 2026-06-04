@@ -20,11 +20,9 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 function sessionFor(unitId: string): Session {
   return {
-    accessToken: 'access',
-    refreshToken: 'refresh',
-    expiresAt: new Date(Date.now() + 60 * 60_000).toISOString(),
     sessionId: 'sess',
     abilityJson: '[]',
+    csrfToken: 'csrf',
     operator: {
       id: 'op-rsp',
       email: 'rsp.fire@cad.local',
