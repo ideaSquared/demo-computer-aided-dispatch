@@ -172,4 +172,17 @@ describe('CSRF gate', () => {
     });
     expect(res.statusCode).toBe(200);
   });
+
+  it('Bearer-auth (no access cookie) skips the CSRF gate even with a real csrfHash', async () => {
+    // A smoke or external client logs in via /dev/login and calls a mutating
+    // route with Authorization: Bearer — no cookies are sent. CSRF defends
+    // against browser-auto-sent cookies, so Bearer-auth requests skip it.
+    const app = await makeApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/test/mutate',
+      headers: { authorization: 'Bearer real-token' },
+    });
+    expect(res.statusCode).toBe(200);
+  });
 });

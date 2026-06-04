@@ -91,6 +91,10 @@ const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
  *   - safe methods (GET/HEAD/OPTIONS)
  *   - dev-bypass sessions (no CSRF binding — bypass means the request never
  *     authenticated to begin with)
+ *   - requests that did NOT authenticate via the access cookie (Bearer-
+ *     header auth is structurally CSRF-immune — browsers can't be coerced
+ *     into sending arbitrary Authorization headers cross-site, so the
+ *     double-submit defence doesn't apply)
  *   - the login + refresh routes (no session yet to bind against — they
  *     mint the CSRF token in their response)
  *
@@ -103,6 +107,12 @@ export function verifyCsrf(req: FastifyRequest, reply: FastifyReply, session: Se
   // Dev-bypass sessions skip CSRF — there's no real token pair to compare
   // against and the existing smokes don't send cookies.
   if (session.csrfHash === '') return true;
+  // CSRF protects cookie-based auth, where the browser auto-attaches the
+  // session cookie cross-site. If the request didn't carry the access
+  // cookie, auth came from the `Authorization` header, which is not
+  // auto-attached cross-site — there's nothing to defend against.
+  const cookieAuth = typeof req.cookies?.[COOKIE_ACCESS] === 'string';
+  if (!cookieAuth) return true;
   const headerToken = req.headers['x-csrf-token'];
   const headerValue = Array.isArray(headerToken) ? headerToken[0] : headerToken;
   const cookieValue = req.cookies?.[COOKIE_CSRF];
