@@ -27,12 +27,14 @@ const GATEWAY_PORT = Number(process.env.SMOKE_GATEWAY_PORT ?? '5000');
 const AUTH_BASE = `http://${HOST}:${AUTH_PORT}`;
 const GATEWAY_BASE = `http://${HOST}:${GATEWAY_PORT}`;
 const HEALTH_DEADLINE_MS = Number(process.env.SMOKE_HEALTH_DEADLINE_MS ?? '60000');
-// 180s by default — CI flaked at 121s with the previous 120s deadline.
-// Ollama model load + classify + NATS round-trip is right at this boundary
-// on a cold CPU runner; the extra 60s leaves headroom without lengthening
-// the happy path (the smoke exits as soon as the chip lands). Local-dev
-// override via SMOKE_CHIP_DEADLINE_MS.
-const CHIP_DEADLINE_MS = Number(process.env.SMOKE_CHIP_DEADLINE_MS ?? '180000');
+// 240s by default. Cold-model latency on CI is highly variable across
+// runners — one PR's `dev-stack` job saw the chip in 15s while the
+// parallel `smoke` job took 182s on a slower runner. Picking a deadline
+// well above the slow-tail keeps the smoke from gating PRs on runner
+// luck; the smoke exits as soon as the chip lands, so the extra margin
+// is invisible on the happy path. The workflow step's `timeout-minutes`
+// must be > this value (currently 6min).
+const CHIP_DEADLINE_MS = Number(process.env.SMOKE_CHIP_DEADLINE_MS ?? '240000');
 
 interface LoginView {
   accessToken: string;
