@@ -22,6 +22,13 @@ export interface Operator {
   tier: ServiceTier;
   roles: readonly Role[];
   disabled: boolean;
+  /**
+   * Resource-service unit ids the operator crews. Today only the `responder`
+   * role uses this — `defineAbilitiesFor` reads it to scope the
+   * `setUnitStatus Unit { id }` rule. Empty for every other role and for
+   * responders the seed hasn't bound to a unit yet.
+   */
+  assignedUnitIds: readonly string[];
 }
 
 /** Persisted session row (refresh-token bookkeeping). */

@@ -77,6 +77,7 @@ describe('http/auth', () => {
             tier: AuthV1.ServiceTier.POLICE,
             roles: [AuthV1.Role.ADMIN],
             disabled: false,
+            assignedUnitIds: [],
           },
         };
       },
@@ -159,6 +160,7 @@ describe('http/auth', () => {
             tier: AuthV1.ServiceTier.POLICE,
             roles: [AuthV1.Role.ADMIN],
             disabled: false,
+            assignedUnitIds: [],
           },
         };
       },
@@ -240,6 +242,7 @@ describe('http/auth', () => {
           tier: AuthV1.ServiceTier.POLICE,
           roles: [AuthV1.Role.ADMIN],
           disabled: false,
+          assignedUnitIds: [],
         },
         abilityJson: '[]',
         expiresAt: '2099-12-31T23:59:59Z',
@@ -271,6 +274,7 @@ describe('http/auth', () => {
           tier: AuthV1.ServiceTier.POLICE,
           roles: [AuthV1.Role.ADMIN],
           disabled: false,
+          assignedUnitIds: [],
         },
         abilityJson: '[]',
         expiresAt: '2099-12-31T23:59:59Z',

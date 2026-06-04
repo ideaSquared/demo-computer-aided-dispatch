@@ -110,13 +110,15 @@ export function hashCsrfToken(token: string): string {
 }
 
 export function abilityJsonFor(operator: Operator): string {
-  // Synthesise the CASL ability from `(tier, roles)`. Assignment-scoped
-  // rules (`responder` for their own unit) need `assignedUnitIds`, which
-  // we don't have until the incident_assignments projection lands — until
-  // then a responder's setUnitStatus rule is just empty (no units).
+  // Synthesise the CASL ability from `(tier, roles, assignedUnitIds)`. The
+  // assignment-scoped rule (`responder` for their own unit) is now real for
+  // anyone the seed bound to a unit — see `setAssignedUnitIds`. Operators
+  // with nothing in the array (every non-responder, or a responder the seed
+  // hasn't wired up yet) get the empty set of `setUnitStatus` rules.
   const ability = defineAbilitiesFor({
     tier: operator.tier,
     roles: [...operator.roles],
+    assignedUnitIds: [...operator.assignedUnitIds],
   });
   // `ability.rules` is the raw CASL rules array (RawRule<…>[]). Serialise
   // as a JSON string so the gateway's CASL version is free to drift and we

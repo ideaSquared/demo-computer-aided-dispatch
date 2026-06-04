@@ -131,6 +131,13 @@ interface OperatorJson {
   displayName: string;
   tier: 'police' | 'medical' | 'fire';
   roles: string[];
+  /**
+   * Resource-service unit ids the operator crews. Empty for every role other
+   * than `responder` (and for responders the seed hasn't bound to a unit
+   * yet). The responder app uses this to pick the unit topic to subscribe to
+   * and to scope its `setUnitStatus` calls.
+   */
+  assignedUnitIds: string[];
 }
 
 function operatorToJson(op: ProtoOperator): OperatorJson {
@@ -143,7 +150,17 @@ function operatorToJson(op: ProtoOperator): OperatorJson {
     const wire = ROLE_TO_WIRE[r];
     if (wire !== null) roles.push(wire);
   }
-  return { id: op.id, email: op.email, displayName: op.displayName, tier, roles };
+  return {
+    id: op.id,
+    email: op.email,
+    displayName: op.displayName,
+    tier,
+    roles,
+    // proto's `repeated string` is `string[]` — pass through unchanged. Old
+    // auth-service binaries that don't set the field arrive as `[]` because
+    // ts-proto initialises a missing repeated field that way.
+    assignedUnitIds: op.assignedUnitIds,
+  };
 }
 
 // --- request schemas -------------------------------------------------------
@@ -280,6 +297,9 @@ export function registerAuthRoutes(app: FastifyInstance, client: AuthClient): vo
         displayName: session.operator.displayName,
         tier: session.operator.tier,
         roles: session.operator.roles,
+        // Same shape as login/refresh — the responder app reads this on
+        // boot from the cached session to know which unit topic to follow.
+        assignedUnitIds: session.operator.assignedUnitIds,
       },
       sessionId: session.sessionId,
       csrfToken,

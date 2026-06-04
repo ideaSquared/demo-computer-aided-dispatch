@@ -280,8 +280,12 @@ async function main(): Promise<void> {
   const operators = await seedOperators();
 
   // 2. Register the fleet, pooling available units by tier (FIFO) so we can
-  //    dispatch real same-tier units to incidents below.
+  //    dispatch real same-tier units to incidents below. Track one
+  //    representative unit per tier (the first registered) so we can wire the
+  //    matching responder operator to it after the seed finishes — that
+  //    gives the responder app a concrete unit to surface.
   const pool: Record<Tier, string[]> = { police: [], medical: [], fire: [] };
+  const firstUnitByTier: Partial<Record<Tier, string>> = {};
   const callsignOf = new Map<string, string>();
   let units = 0;
   for (const u of UNITS) {
@@ -293,11 +297,39 @@ async function main(): Promise<void> {
         registeredBy: 'seed',
       });
       pool[u.tier].push(unit.id);
+      if (firstUnitByTier[u.tier] === undefined) firstUnitByTier[u.tier] = unit.id;
       callsignOf.set(unit.id, u.callsign);
       units += 1;
       console.log(`  ✓ unit  ${u.tier.padEnd(7)} ${u.callsign}`);
     } catch (err) {
       console.error(`  ✗ unit  ${u.callsign}: ${(err as Error).message}`);
+    }
+  }
+
+  // 2b. Bind each tier's responder operator to that tier's lead unit. The
+  //     unit uuids only exist after the fleet step above, which is why the
+  //     auth seed couldn't write them at boot. The responder app reads
+  //     `assignedUnitIds` from `/api/auth/me` to pick a topic, so without
+  //     this step the field UI lands on an empty `MyUnitPage`.
+  const RESPONDER_BY_TIER: Record<Tier, string> = {
+    police: 'rsp.police@cad.local',
+    medical: 'rsp.medical@cad.local',
+    fire: 'rsp.fire@cad.local',
+  };
+  for (const tier of ['police', 'medical', 'fire'] as const) {
+    const unitId = firstUnitByTier[tier];
+    const email = RESPONDER_BY_TIER[tier];
+    if (!unitId) {
+      console.error(`  ✗ assign ${tier.padEnd(7)} ${email}: no unit registered`);
+      continue;
+    }
+    try {
+      await authReq('POST', `/dev/operators/${encodeURIComponent(email)}/assignments`, {
+        unitIds: [unitId],
+      });
+      console.log(`  ✓ assign ${tier.padEnd(7)} ${email} → ${callsignOf.get(unitId) ?? unitId}`);
+    } catch (err) {
+      console.error(`  ✗ assign ${tier.padEnd(7)} ${email}: ${(err as Error).message}`);
     }
   }
 

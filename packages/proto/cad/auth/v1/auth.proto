@@ -133,6 +133,13 @@ message Operator {
   ServiceTier tier = 4;
   repeated Role roles = 5;
   bool disabled = 6;
+  // Resource-service unit ids the operator crews. Today only the `responder`
+  // role consumes this — `defineAbilitiesFor` in `@cad/lib.authz` reads it
+  // to scope the `setUnitStatus Unit { id }` rule to the operator's own
+  // unit(s). Empty for every other role (and for responders the seed hasn't
+  // bound to a unit yet). Forward-compatible: callers that don't know about
+  // this field continue to work unchanged.
+  repeated string assigned_unit_ids = 7;
 }
 
 // Dev-only convenience payload. `password` is cleartext — explicitly a dev

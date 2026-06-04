@@ -7,7 +7,7 @@ import { z } from 'zod';
 import { config } from './config.js';
 import { isAuthError, login, refresh, revokeSessionById, validateToken } from './core.js';
 import { migrate } from './db/migrate.js';
-import { upsertOperator } from './db/repository.js';
+import { findOperatorByEmail, setAssignedUnitIds, upsertOperator } from './db/repository.js';
 import { createHandlers } from './grpc/handlers.js';
 import { startGrpcServer } from './grpc/server.js';
 import { SEEDED_OPERATORS } from './seeded.js';
@@ -141,6 +141,44 @@ if (config.DEV_MODE) {
       tier: parsed.data.tier,
       roles: parsed.data.roles,
     });
+    return { operator };
+  });
+
+  // Bind a responder to their unit(s). The seed script calls this AFTER the
+  // resource service has registered the fleet, because unit ids are minted
+  // there and aren't known at auth-service boot. Idempotent: replaces the
+  // whole array. 404 if the operator email is unknown so a stale seed
+  // doesn't silently no-op. Authentication is via DEV_MODE — same posture
+  // as the rest of `/dev/*`.
+  const assignmentsBodySchema = z.object({
+    unitIds: z.array(z.string().min(1)),
+  });
+  app.post<{ Params: { email: string } }>(
+    '/dev/operators/:email/assignments',
+    async (req, reply) => {
+      const parsed = assignmentsBodySchema.safeParse(req.body);
+      if (!parsed.success) {
+        reply.code(400);
+        return { error: 'invalid body', issues: parsed.error.flatten() };
+      }
+      const operator = await setAssignedUnitIds(db, req.params.email, parsed.data.unitIds);
+      if (!operator) {
+        reply.code(404);
+        return { error: `operator '${req.params.email}' not found` };
+      }
+      return { operator };
+    },
+  );
+
+  // Read-back helper for the same dev convenience — useful from the smoke
+  // script when asserting an assignment took. Returns the operator JSON
+  // shape (no password hash, no session info).
+  app.get<{ Params: { email: string } }>('/dev/operators/:email', async (req, reply) => {
+    const operator = await findOperatorByEmail(db, req.params.email);
+    if (!operator) {
+      reply.code(404);
+      return { error: `operator '${req.params.email}' not found` };
+    }
     return { operator };
   });
 

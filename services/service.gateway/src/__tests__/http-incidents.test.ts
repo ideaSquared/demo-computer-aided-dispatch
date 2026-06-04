@@ -36,6 +36,7 @@ function operator(tier: AuthV1.ServiceTier, roles: AuthV1.Role[]): ProtoOperator
     tier,
     roles,
     disabled: false,
+    assignedUnitIds: [],
   };
 }
 

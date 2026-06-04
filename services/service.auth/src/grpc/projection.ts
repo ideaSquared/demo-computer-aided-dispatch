@@ -49,6 +49,10 @@ export function toProtoOperator(op: Operator): ProtoOperator {
     tier: TIER_TO_PROTO[op.tier],
     roles: op.roles.map((r) => ROLE_TO_PROTO[r]),
     disabled: op.disabled,
+    // proto's `repeated string` is `string[]`; the domain holds `readonly
+    // string[]`, so a shallow copy keeps both sides happy without exposing
+    // the underlying buffer.
+    assignedUnitIds: [...op.assignedUnitIds],
   };
 }
 
