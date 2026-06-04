@@ -3,10 +3,9 @@ import { describe, expect, it, vi } from 'vitest';
 import { upsertAiSuggestion } from '../db/repository.js';
 import { subscribeTriageClassified } from '../subscribers/triageClassified.js';
 
-// The subscriber binds via `@cad/events`' `subscribe()` helper, which loops
-// over the NATS subscription. We drive the handler directly by intercepting
-// `subscribe()` so the test never spins up a real consumer — same pattern as
-// the resource-side subscriber tests would use.
+// The subscriber binds via `@cad/events`' `subscribeDurable()` helper, which
+// owns the JetStream pull loop. We drive the handler directly by intercepting
+// `subscribeDurable()` so the test never spins up a real consumer.
 //
 // `upsertAiSuggestion` is mocked at the module boundary; the test asserts
 // the inputs the subscriber threads through and the conditional fan-out.
@@ -19,9 +18,12 @@ vi.mock('@cad/events', async () => {
   return {
     ...actual,
     // Capture the handler so the test can drive it directly with a payload.
-    subscribe: vi.fn(async (_ctx, _subject, _schema, handler) => {
-      capturedHandler = handler;
-    }),
+    subscribeDurable: vi.fn(
+      async (opts: { handler: (event: Record<string, unknown>) => Promise<void> | void }) => {
+        capturedHandler = opts.handler;
+        return { stop: async () => undefined };
+      },
+    ),
     // Capture publishes so the test can assert the fan-out shape.
     publish: vi.fn(async (_ctx, subject, _schema, payload) => {
       publishedEvents.push({ subject, payload });
