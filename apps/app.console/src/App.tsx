@@ -41,7 +41,11 @@ function Gate() {
 
 function ConsoleShell({ session }: { session: Session }) {
   const identity = useMemo(() => identityFromSession(session), [session]);
-  const url = useMemo(() => wsUrlFor(session.accessToken), [session.accessToken]);
+  // No token in the URL — the gateway reads the `cad_access` cookie off the
+  // WS upgrade. The whole shell unmounts on logout (the Gate above switches
+  // to LoginPage when `session` goes null), so a fresh login automatically
+  // means a fresh url + WS connection — no dep needed.
+  const url = wsUrlFor();
   const { status, subscribe, send } = useWs({ url });
   const [tab, setTab] = useState<Tab>('incidents');
   const { logout, switchOperator } = useAuth();

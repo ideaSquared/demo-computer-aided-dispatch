@@ -5,33 +5,37 @@ import {
   useContext,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from 'react';
-import { authedFetch, onUnauthorizedResponse, setAccessToken } from '../services/http.js';
-import {
-  clearStoredSession,
-  LoginResponseSchema,
-  loadStoredSession,
-  persistSession,
-  type Session,
-} from './session.js';
+import { authedFetch, onUnauthorizedResponse } from '../services/http.js';
+import { LoginResponseSchema, MeResponseSchema, type Session } from './session.js';
 
 /**
- * AuthProvider owns the operator session: where it lives (localStorage +
- * memory), how it refreshes (POST `/api/auth/refresh` ~1 minute before
- * `expiresAt`), how it dies (explicit logout OR a 401 from any gateway call
- * via the http shim's `onUnauthorizedResponse` hook).
+ * AuthProvider owns the operator session. Tokens live in HttpOnly cookies
+ * set by the gateway (so JS can't touch them); this provider holds an
+ * in-memory mirror of the operator + sessionId + csrfToken trio so the UI
+ * can render identity without re-parsing cookies on every keystroke.
  *
- * Children read it through `useAuth()`. The shim is wired so service helpers
- * (units.ts, incident.ts, …) automatically pick up the current token without
- * importing React.
+ * Lifecycle:
+ *   - Boot: GET /api/auth/me. If 200, hydrate; if 401, stay anonymous.
+ *   - Login: POST /api/auth/login. Gateway sets cookies + returns the
+ *     operator JSON; we mirror it.
+ *   - 401 from any call → drop in-memory session (the cookies are already
+ *     dead server-side).
+ *   - Logout: POST /api/auth/logout. Gateway clears the cookies; we drop
+ *     the mirror.
+ *
+ * No localStorage. No client-side refresh scheduler — the gateway/auth
+ * service owns rotation, and a 401 on any call triggers a logout-and-
+ * redirect path the user can re-login from.
+ *
+ * Children read state through `useAuth()`.
  */
 
 interface AuthContextValue {
   /** Null until the user is signed in. */
   readonly session: Session | null;
-  /** True while we're hydrating from localStorage / refreshing on boot. */
+  /** True while we're hydrating from /api/auth/me on boot. */
   readonly hydrating: boolean;
   /** Optional sign-in error (last login attempt). */
   readonly error: string | null;
@@ -49,107 +53,50 @@ interface AuthProviderProps {
   readonly children: ReactNode;
 }
 
-// Refresh this many ms before `expiresAt` — gives us slack for clock skew
-// + the round-trip itself. Access tokens are 15-minute, so 60s slack is fine.
-const REFRESH_LEAD_MS = 60_000;
-
 export function AuthProvider({ children }: AuthProviderProps): ReactNode {
-  const [session, setSession] = useState<Session | null>(() => loadStoredSession());
+  const [session, setSession] = useState<Session | null>(null);
   const [hydrating, setHydrating] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Push the access token into the http shim whenever the session changes,
-  // so authedFetch picks it up for every subsequent call without prop drilling.
-  useEffect(() => {
-    setAccessToken(session?.accessToken ?? null);
-  }, [session]);
-
-  const applySession = useCallback((next: Session | null) => {
-    setSession(next);
-    if (next) {
-      persistSession(next);
-    } else {
-      clearStoredSession();
-    }
-  }, []);
 
   // 401 from any gateway call → tear down. We DON'T POST /api/auth/logout
   // here — the server already considers us unauthenticated.
   useEffect(() => {
-    onUnauthorizedResponse(() => applySession(null));
+    onUnauthorizedResponse(() => setSession(null));
     return () => onUnauthorizedResponse(null);
-  }, [applySession]);
+  }, []);
 
-  const refreshNow = useCallback(
-    async (current: Session): Promise<void> => {
-      try {
-        const res = await authedFetch('/api/auth/refresh', {
-          method: 'POST',
-          body: JSON.stringify({ refreshToken: current.refreshToken }),
-          anonymous: true,
-        });
-        if (!res.ok) {
-          applySession(null);
-          return;
-        }
-        const json: unknown = await res.json();
-        const parsed = LoginResponseSchema.safeParse(json);
-        if (!parsed.success) {
-          applySession(null);
-          return;
-        }
-        applySession(parsed.data);
-      } catch {
-        applySession(null);
-      }
-    },
-    [applySession],
-  );
-
-  // On every session change, schedule the next refresh.
-  useEffect(() => {
-    if (refreshTimer.current) {
-      clearTimeout(refreshTimer.current);
-      refreshTimer.current = null;
-    }
-    if (!session) return;
-    const expiresAt = new Date(session.expiresAt).getTime();
-    if (Number.isNaN(expiresAt)) return;
-    const delay = Math.max(0, expiresAt - Date.now() - REFRESH_LEAD_MS);
-    refreshTimer.current = setTimeout(() => {
-      void refreshNow(session);
-    }, delay);
-    return () => {
-      if (refreshTimer.current) {
-        clearTimeout(refreshTimer.current);
-        refreshTimer.current = null;
-      }
-    };
-  }, [session, refreshNow]);
-
-  // On boot, verify the localStorage-cached session against /api/auth/me so
-  // a revoked-elsewhere token doesn't slip through. Failure clears state.
+  // On boot, hit /api/auth/me. The browser auto-sends the access cookie
+  // (if present); 200 means we still have a live session, 401 means we
+  // don't. No localStorage to consult — cookies ARE the persistence.
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const stored = loadStoredSession();
-      if (!stored) {
-        if (!cancelled) setHydrating(false);
-        return;
-      }
-      // Push the token into the shim BEFORE the /me call so it carries auth.
-      setAccessToken(stored.accessToken);
       try {
-        const res = await authedFetch('/api/auth/me', { method: 'GET' });
+        const res = await authedFetch('/api/auth/me', { method: 'GET', anonymous: true });
         if (cancelled) return;
         if (!res.ok) {
-          applySession(null);
-        } else {
-          applySession(stored);
+          setSession(null);
+          return;
         }
+        const json: unknown = await res.json();
+        const parsed = MeResponseSchema.safeParse(json);
+        if (!parsed.success) {
+          setSession(null);
+          return;
+        }
+        // `/me` doesn't return abilityJson today — the LoginResponse does.
+        // Until we plumb it through validate→/me, fall back to an empty
+        // rules array; the gateway re-validates on every request anyway,
+        // so client-side hints just degrade to "no hints" until the next
+        // login. (Acceptable for boot hydration.)
+        setSession({
+          sessionId: parsed.data.sessionId,
+          abilityJson: '[]',
+          csrfToken: parsed.data.csrfToken,
+          operator: parsed.data.operator,
+        });
       } catch {
-        if (!cancelled) applySession(null);
+        if (!cancelled) setSession(null);
       } finally {
         if (!cancelled) setHydrating(false);
       }
@@ -157,50 +104,48 @@ export function AuthProvider({ children }: AuthProviderProps): ReactNode {
     return () => {
       cancelled = true;
     };
-    // Boot-time hydration only — `applySession` is stable (useCallback with
-    // []), but the linter can't prove it; pinning the dep is fine here.
-  }, [applySession]);
+  }, []);
 
-  const login = useCallback<AuthContextValue['login']>(
-    async (input) => {
-      setError(null);
-      const res = await authedFetch('/api/auth/login', {
-        method: 'POST',
-        body: JSON.stringify(input),
-        anonymous: true,
-      });
-      const json: unknown = await res.json().catch(() => undefined);
-      if (!res.ok) {
-        const msg = extractErrorMessage(json) ?? `login failed (${res.status})`;
-        setError(msg);
-        throw new Error(msg);
-      }
-      const parsed = LoginResponseSchema.safeParse(json);
-      if (!parsed.success) {
-        setError('login response malformed');
-        throw new Error('login response malformed');
-      }
-      applySession(parsed.data);
-    },
-    [applySession],
-  );
+  const login = useCallback<AuthContextValue['login']>(async (input) => {
+    setError(null);
+    const res = await authedFetch('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify(input),
+      anonymous: true,
+    });
+    const json: unknown = await res.json().catch(() => undefined);
+    if (!res.ok) {
+      const msg = extractErrorMessage(json) ?? `login failed (${res.status})`;
+      setError(msg);
+      throw new Error(msg);
+    }
+    const parsed = LoginResponseSchema.safeParse(json);
+    if (!parsed.success) {
+      setError('login response malformed');
+      throw new Error('login response malformed');
+    }
+    setSession({
+      sessionId: parsed.data.sessionId,
+      abilityJson: parsed.data.abilityJson,
+      csrfToken: parsed.data.csrfToken,
+      operator: parsed.data.operator,
+    });
+  }, []);
 
   const logout = useCallback<AuthContextValue['logout']>(async () => {
     if (!session) return;
     try {
-      await authedFetch('/api/auth/logout', {
-        method: 'POST',
-        body: JSON.stringify({ sessionId: session.sessionId }),
-      });
+      // No body — the gateway derives the session id from the access cookie.
+      await authedFetch('/api/auth/logout', { method: 'POST' });
     } catch {
       // Network error on logout doesn't block local teardown.
     }
-    applySession(null);
-  }, [session, applySession]);
+    setSession(null);
+  }, [session]);
 
   const switchOperator = useCallback<AuthContextValue['switchOperator']>(() => {
-    applySession(null);
-  }, [applySession]);
+    setSession(null);
+  }, []);
 
   const value = useMemo<AuthContextValue>(
     () => ({ session, hydrating, error, login, logout, switchOperator }),
