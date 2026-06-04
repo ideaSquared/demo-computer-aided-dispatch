@@ -61,6 +61,8 @@ export type {
   AiTriageSuggestion,
   CancelRequest,
   CancelResponse,
+  DeclareMajorRequest,
+  DeclareMajorResponse,
   DispatchRequest,
   DispatchResponse,
   GetRequest,
