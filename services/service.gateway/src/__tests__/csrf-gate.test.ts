@@ -44,6 +44,7 @@ async function makeApp(
         tier: AuthV1.ServiceTier.FIRE,
         roles: [AuthV1.Role.DISPATCHER],
         disabled: false,
+        assignedUnitIds: [],
       },
       abilityJson: abilityJsonForRoles(),
       expiresAt: '2099-12-31T23:59:59Z',
