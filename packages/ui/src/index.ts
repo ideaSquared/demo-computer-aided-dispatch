@@ -2,6 +2,7 @@ export * from './components/data/EmptyState/index.js';
 export * from './components/data/Table/index.js';
 export * from './components/form/Field/index.js';
 export * from './components/form/Input/index.js';
+export * from './components/form/Select/index.js';
 export * from './components/layout/Divider/index.js';
 export * from './components/layout/PageShell/index.js';
 export * from './components/layout/Panel/index.js';

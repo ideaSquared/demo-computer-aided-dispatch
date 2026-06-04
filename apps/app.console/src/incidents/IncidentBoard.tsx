@@ -1,4 +1,4 @@
-import { Button, Stack } from '@cad/lib.ui';
+import { Badge, Button, Card, Field, Heading, Input, Select, Stack, Table } from '@cad/lib.ui';
 import { type FormEvent, useState } from 'react';
 import { useAuth } from '../auth/AuthProvider.js';
 import type { Role } from '../auth/session.js';
@@ -6,7 +6,6 @@ import type { UseFleetResult } from '../fleet/useFleet.js';
 import type { Identity } from '../presence/identity.js';
 import type { Incident, IncidentApi, Severity, Tier } from '../services/incident.js';
 import { TIERS } from '../services/incident.js';
-import type { Unit } from '../services/units.js';
 import { AiSuggestionChip } from './AiSuggestionChip.js';
 import { bindIncidentActions, IncidentActions } from './IncidentActions.js';
 import * as styles from './IncidentBoard.css.js';
@@ -35,17 +34,23 @@ function canDeclareMajor(roles: ReadonlyArray<Role>): boolean {
 
 const TIER_OPTIONS: ReadonlyArray<Tier> = TIERS;
 
+const SEVERITY_TO_BADGE: Record<Severity, 's1' | 's2' | 's3' | 's4' | 's5'> = {
+  low: 's1',
+  medium: 's2',
+  high: 's4',
+  critical: 's5',
+};
+
+const TIER_TO_BADGE: Record<Tier, 'police' | 'medical' | 'fire'> = {
+  police: 'police',
+  medical: 'medical',
+  fire: 'fire',
+};
+
 export interface IncidentBoardProps {
   readonly identity: Identity;
-  /** Shared incident data source, lifted to the shell so board and map stay in sync. */
   readonly incidents: UseIncidentsResult;
-  /** Shared fleet roster, lifted to the shell so the dispatch picker lists live units. */
   readonly fleet: UseFleetResult;
-  /**
-   * Optional incident HTTP client. Forwarded to the dispatch picker so it can
-   * call the recommender for nearest-first ordering. Production callers omit
-   * this (defaults to the singleton); tests inject a mock.
-   */
   readonly incidentApi?: IncidentApi | undefined;
 }
 
@@ -57,56 +62,134 @@ export function IncidentBoard({
 }: IncidentBoardProps) {
   const { incidents, loading, error, create } = source;
   const { units } = fleet;
-  // Role is sourced from the auth session — the brief calls out the coarse
-  // role check explicitly. `session` is guaranteed non-null here: the
-  // <Gate /> in App.tsx only mounts the shell when a session is present.
   const { session } = useAuth();
   const roles: ReadonlyArray<Role> = session?.operator.roles ?? [];
   const showDeclareMajor = canDeclareMajor(roles);
 
-  return (
-    <Stack gap="24">
-      <NewIncidentForm
-        defaultTier={identity.tier}
-        onCreate={(title, tier) =>
-          create({ title, tier, location: { lat: 0, lng: 0 }, openedBy: identity.operatorId })
+  const columns = [
+    { id: 'title', label: 'title', width: 'minmax(0, 1fr)' },
+    { id: 'tier', label: 'tier', width: '100px' },
+    { id: 'state', label: 'state', width: '120px' },
+    { id: 'severity', label: 'severity', width: '110px' },
+    { id: 'ver', label: 'ver', width: '50px', align: 'end' as const },
+    { id: 'actions', label: 'actions', width: 'minmax(220px, auto)', align: 'end' as const },
+  ];
+
+  const rows = incidents.map((incident) => ({
+    id: incident.id,
+    cells: [
+      <TitleCell
+        key="title"
+        incident={incident}
+        canApply={incident.state === 'open'}
+        onTriage={(s) =>
+          void source.triage(incident.id, {
+            severity: s,
+            expectedVersion: incident.version,
+            triagedBy: identity.operatorId,
+          })
         }
-      />
+      />,
+      <Badge key="tier" tone="tier" value={TIER_TO_BADGE[incident.tier]} variant="soft" size="sm">
+        {incident.tier}
+      </Badge>,
+      <Badge key="state" tone="incidentState" value={incident.state} variant="soft" size="sm">
+        {incident.state}
+      </Badge>,
+      incident.severity ? (
+        <Badge
+          key="sev"
+          tone="severity"
+          value={SEVERITY_TO_BADGE[incident.severity]}
+          variant="soft"
+          size="sm"
+        >
+          {incident.severity}
+        </Badge>
+      ) : (
+        <span key="sev" className={styles.severityNone}>
+          —
+        </span>
+      ),
+      <span key="ver" className={styles.versionText}>
+        {incident.version}
+      </span>,
+      <div key="actions" className={styles.actions}>
+        {onDeclareMajorAllowed(incident, showDeclareMajor) ? (
+          <Button intent="danger" size="sm" onClick={() => void source.declareMajor(incident.id)}>
+            declare major
+          </Button>
+        ) : null}
+        <IncidentActions
+          incident={incident}
+          units={units}
+          incidentApi={incidentApi}
+          {...bindIncidentActions(source, incident, identity.operatorId)}
+        />
+      </div>,
+    ],
+  }));
+
+  return (
+    <Stack gap="16">
+      <Card padding="16" tone="default">
+        <NewIncidentForm
+          defaultTier={identity.tier}
+          onCreate={(title, tier) =>
+            create({ title, tier, location: { lat: 0, lng: 0 }, openedBy: identity.operatorId })
+          }
+        />
+      </Card>
 
       {error ? <div className={styles.errorBanner}>{error}</div> : null}
 
       <Stack gap="8">
-        <h2 className={styles.meta}>open incidents</h2>
-        <div className={styles.board}>
-          <div className={styles.header}>
-            <div>title</div>
-            <div>tier</div>
-            <div>state</div>
-            <div>severity</div>
-            <div>ver</div>
-            <div>actions</div>
-          </div>
-          {incidents.length === 0 ? (
-            <div className={styles.empty}>
-              {loading ? 'loading incidents…' : 'no open incidents — create one above'}
-            </div>
-          ) : (
-            incidents.map((incident) => (
-              <IncidentRow
-                key={incident.id}
-                incident={incident}
-                units={units}
-                incidentApi={incidentApi}
-                onDeclareMajor={
-                  showDeclareMajor ? () => void source.declareMajor(incident.id) : undefined
-                }
-                {...bindIncidentActions(source, incident, identity.operatorId)}
-              />
-            ))
-          )}
-        </div>
+        <Heading level={2} size="xs">
+          open incidents
+        </Heading>
+        <Table
+          columns={columns}
+          rows={rows}
+          density="compact"
+          empty={loading ? 'loading incidents…' : 'no open incidents — create one above'}
+        />
       </Stack>
     </Stack>
+  );
+}
+
+function onDeclareMajorAllowed(incident: Incident, allowed: boolean): boolean {
+  return allowed && !incident.major && NON_TERMINAL_STATES.has(incident.state);
+}
+
+function TitleCell({
+  incident,
+  canApply,
+  onTriage,
+}: {
+  incident: Incident;
+  canApply: boolean;
+  onTriage: (severity: Severity) => void;
+}) {
+  return (
+    <div className={styles.titleCell}>
+      <div className={styles.titleRow}>
+        <span className={styles.titleText}>{incident.title}</span>
+        {incident.major ? (
+          <Badge tone="intent" value="danger" variant="solid" size="sm" aria-label="major incident">
+            major
+          </Badge>
+        ) : null}
+      </div>
+      {incident.aiSuggestion ? (
+        <div className={styles.aiSuggestion}>
+          <AiSuggestionChip
+            suggestion={incident.aiSuggestion}
+            onApply={canApply ? onTriage : undefined}
+          />
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -129,129 +212,27 @@ function NewIncidentForm({
   }
 
   return (
-    <form className={styles.form} onSubmit={submit}>
-      <div className={styles.field}>
-        <label className={styles.label} htmlFor="incident-title">
-          title
-        </label>
-        <input
+    <form className={styles.formGrid} onSubmit={submit}>
+      <Field label="title" htmlFor="incident-title">
+        <Input
           id="incident-title"
-          className={styles.input}
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="e.g. structure fire on 5th"
         />
-      </div>
-      <div className={styles.field}>
-        <label className={styles.label} htmlFor="incident-tier">
-          tier
-        </label>
-        <select
-          id="incident-tier"
-          className={styles.input}
-          value={tier}
-          onChange={(e) => setTier(e.target.value as Tier)}
-        >
+      </Field>
+      <Field label="tier" htmlFor="incident-tier">
+        <Select id="incident-tier" value={tier} onChange={(e) => setTier(e.target.value as Tier)}>
           {TIER_OPTIONS.map((t) => (
             <option key={t} value={t}>
               {t}
             </option>
           ))}
-        </select>
-      </div>
-      <div />
-      <div />
+        </Select>
+      </Field>
       <Button type="submit" intent="primary" size="md" disabled={!title.trim()}>
         open incident
       </Button>
     </form>
-  );
-}
-
-function IncidentRow({
-  incident,
-  units,
-  onTriage,
-  onDispatch,
-  onArrival,
-  onResolve,
-  onCancel,
-  onDeclareMajor,
-  incidentApi,
-}: {
-  incident: Incident;
-  units: ReadonlyArray<Unit>;
-  onTriage: (severity: Severity) => void;
-  onDispatch: (unitIds: ReadonlyArray<string>) => void;
-  onArrival: (unitId: string) => void;
-  onResolve: () => void;
-  onCancel: (reason: string) => void;
-  /**
-   * Optional handler — present only for roles allowed to declare major
-   * (commander / admin) AND when the button should be shown (non-terminal +
-   * not yet major). The button hides when `undefined`.
-   */
-  onDeclareMajor?: (() => void) | undefined;
-  incidentApi?: IncidentApi | undefined;
-}) {
-  // The "Apply" button on the chip pre-fills the operator's triage
-  // selection — it doesn't auto-submit. We only wire it on incidents the
-  // operator can still triage; for everything else the chip stays
-  // informational.
-  const canApply = incident.state === 'open';
-  const showDeclareMajor =
-    onDeclareMajor !== undefined && !incident.major && NON_TERMINAL_STATES.has(incident.state);
-  return (
-    <div className={styles.row}>
-      <div className={styles.title}>
-        <div className={styles.titleRow}>
-          <span>{incident.title}</span>
-          {incident.major ? (
-            <span className={styles.majorBadge} role="status" aria-label="major incident">
-              major
-            </span>
-          ) : null}
-        </div>
-        {incident.aiSuggestion ? (
-          <div className={styles.aiSuggestion}>
-            <AiSuggestionChip
-              suggestion={incident.aiSuggestion}
-              onApply={canApply ? onTriage : undefined}
-            />
-          </div>
-        ) : null}
-      </div>
-      <div className={styles.meta}>{incident.tier}</div>
-      <div>
-        <span className={styles.stateBadge({ state: incident.state })}>{incident.state}</span>
-      </div>
-      <div>
-        {incident.severity ? (
-          <span className={styles.severityBadge({ severity: incident.severity })}>
-            {incident.severity}
-          </span>
-        ) : (
-          <span className={styles.severityNone}>—</span>
-        )}
-      </div>
-      <div className={styles.meta}>{incident.version}</div>
-      <div className={styles.actions}>
-        {showDeclareMajor ? (
-          <Button intent="danger" size="sm" onClick={onDeclareMajor}>
-            declare major
-          </Button>
-        ) : null}
-        <IncidentActions
-          incident={incident}
-          units={units}
-          onTriage={onTriage}
-          onDispatch={onDispatch}
-          onArrival={onArrival}
-          onResolve={onResolve}
-          onCancel={onCancel}
-          incidentApi={incidentApi}
-        />
-      </div>
-    </div>
   );
 }

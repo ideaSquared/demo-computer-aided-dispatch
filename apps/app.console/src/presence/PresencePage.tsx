@@ -1,11 +1,21 @@
 import type { PresenceStatus } from '@cad/events/presence';
-import { Button, Stack } from '@cad/lib.ui';
+import { Badge, Button, Heading, Stack, Table } from '@cad/lib.ui';
 import type { ClientMessage } from '../ws/protocol.js';
 import type { ConnectionStatus } from '../ws/useWs.js';
 import * as styles from './PresencePage.css.js';
 import { usePresence } from './usePresence.js';
 
 const STATUSES: ReadonlyArray<PresenceStatus> = ['available', 'busy', 'on-scene', 'off-duty'];
+
+const PRESENCE_TO_UNIT_STATUS: Record<
+  PresenceStatus,
+  'available' | 'dispatched' | 'onScene' | 'outOfService'
+> = {
+  available: 'available',
+  busy: 'dispatched',
+  'on-scene': 'onScene',
+  'off-duty': 'outOfService',
+};
 
 function formatTime(iso: string): string {
   const d = new Date(iso);
@@ -22,10 +32,43 @@ export interface PresenceViewProps {
 export function PresenceView({ status, subscribe, send }: PresenceViewProps) {
   const { entries, setStatus } = usePresence({ subscribe, send });
 
+  const columns = [
+    { id: 'operator', label: 'operator', width: 'minmax(0, 1.4fr)' },
+    { id: 'tier', label: 'tier', width: '110px' },
+    { id: 'status', label: 'status', width: '140px' },
+    { id: 'updated', label: 'updated', width: '120px' },
+  ];
+
+  const rows = entries.map((entry) => ({
+    id: entry.operatorId,
+    cells: [
+      <span key="op" className={styles.operator}>
+        {entry.displayName}
+      </span>,
+      <Badge key="tier" tone="tier" value={entry.tier} variant="soft" size="sm">
+        {entry.tier}
+      </Badge>,
+      <Badge
+        key="status"
+        tone="unitStatus"
+        value={PRESENCE_TO_UNIT_STATUS[entry.status]}
+        variant="soft"
+        size="sm"
+      >
+        {entry.status}
+      </Badge>,
+      <span key="ts" className={styles.timestamp}>
+        {formatTime(entry.occurredAt)}
+      </span>,
+    ],
+  }));
+
   return (
-    <Stack gap="24">
+    <Stack gap="16">
       <Stack gap="8">
-        <h2 className={styles.subheading}>set my status</h2>
+        <Heading level={2} size="xs">
+          set my status
+        </Heading>
         <Stack direction="row" gap="8">
           {STATUSES.map((s) => (
             <Button
@@ -42,33 +85,15 @@ export function PresenceView({ status, subscribe, send }: PresenceViewProps) {
       </Stack>
 
       <Stack gap="8">
-        <h2 className={styles.subheading}>live roster</h2>
-        <div className={styles.rosterCard}>
-          <div className={styles.rosterHeader}>
-            <div>operator</div>
-            <div>tier</div>
-            <div>status</div>
-            <div>updated</div>
-          </div>
-          {entries.length === 0 ? (
-            <div className={styles.empty}>
-              no presence yet — change your status to publish the first event
-            </div>
-          ) : (
-            entries.map((entry) => (
-              <div key={entry.operatorId} className={styles.rosterRow}>
-                <div className={styles.operator}>{entry.displayName}</div>
-                <div className={styles.tier}>{entry.tier}</div>
-                <div>
-                  <span className={styles.statusBadge({ status: entry.status })}>
-                    {entry.status}
-                  </span>
-                </div>
-                <div className={styles.timestamp}>{formatTime(entry.occurredAt)}</div>
-              </div>
-            ))
-          )}
-        </div>
+        <Heading level={2} size="xs">
+          live roster
+        </Heading>
+        <Table
+          columns={columns}
+          rows={rows}
+          density="compact"
+          empty="no presence yet — change your status to publish the first event"
+        />
       </Stack>
     </Stack>
   );

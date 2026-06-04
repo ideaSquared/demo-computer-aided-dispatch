@@ -3,25 +3,15 @@ import { style } from '@vanilla-extract/css';
 import { recipe } from '@vanilla-extract/recipes';
 
 /**
- * Phone-first card and button stack for the unit status surface. The
- * action buttons are oversized on purpose: a thumb at arm's length on
- * pavement in the rain needs the full row to be tappable, not a small
- * label inside it.
+ * Phone-first action buttons for the unit status surface. The action
+ * buttons are oversized on purpose: a thumb at arm's length on pavement in
+ * the rain needs the full row to be tappable, not a small label inside it.
  */
 
-export const card = style({
-  padding: vars.spacing['16'],
-  border: `1px solid ${vars.colors.surface.border}`,
-  borderRadius: vars.radii.md,
-  background: vars.colors.surface.bgElevated,
+export const cardInner = style({
   display: 'flex',
   flexDirection: 'column',
   gap: vars.spacing['12'],
-});
-
-export const callsign = style({
-  font: vars.typography.heading.lg,
-  margin: 0,
 });
 
 export const metaRow = style({
@@ -32,37 +22,16 @@ export const metaRow = style({
 });
 
 export const meta = style({
-  font: vars.typography.mono,
-  fontSize: '12px',
+  font: vars.typography.monoSm,
   color: vars.colors.text.subtle,
-});
-
-export const statusBadge = recipe({
-  base: {
-    display: 'inline-flex',
-    alignItems: 'center',
-    padding: `${vars.spacing['4']} ${vars.spacing['12']}`,
-    borderRadius: vars.radii.full,
-    font: vars.typography.mono,
-    fontSize: '12px',
-    textTransform: 'uppercase',
-    letterSpacing: '0.05em',
-  },
-  variants: {
-    status: {
-      available: { background: vars.colors.intent.success, color: vars.colors.text.onBrand },
-      dispatched: { background: vars.colors.intent.warning, color: vars.colors.text.onBrand },
-      enRoute: { background: vars.colors.intent.warning, color: vars.colors.text.onBrand },
-      onScene: { background: vars.colors.brand.primary, color: vars.colors.text.onBrand },
-      outOfService: { background: vars.colors.intent.danger, color: vars.colors.text.onDanger },
-    },
-  },
+  fontVariantNumeric: 'tabular-nums',
 });
 
 export const buttonStack = style({
   display: 'flex',
   flexDirection: 'column',
   gap: vars.spacing['12'],
+  marginTop: vars.spacing['4'],
 });
 
 /**
@@ -82,11 +51,16 @@ export const actionButton = recipe({
     font: vars.typography.heading.sm,
     transition: vars.transitions.fast,
     color: vars.colors.text.onBrand,
+    boxShadow: vars.shadows.sm,
     // Disable native tap-highlight on iOS — we render our own pressed state.
     WebkitTapHighlightColor: 'transparent',
     ':disabled': {
       opacity: 0.4,
       cursor: 'not-allowed',
+    },
+    ':focus-visible': {
+      outline: 'none',
+      boxShadow: vars.shadows.focusRing,
     },
   },
   variants: {
@@ -100,28 +74,25 @@ export const actionButton = recipe({
       },
       danger: {
         background: vars.colors.intent.danger,
+        color: vars.colors.text.onDanger,
       },
     },
   },
 });
 
 export const errorBanner = style({
-  padding: vars.spacing['12'],
+  padding: `${vars.spacing['12']} ${vars.spacing['16']}`,
   border: `1px solid ${vars.colors.intent.danger}`,
-  background: vars.colors.surface.bgElevated,
+  background: vars.colors.intent.dangerBg,
   borderRadius: vars.radii.md,
   color: vars.colors.intent.danger,
-});
-
-export const link = style({
-  color: vars.colors.brand.primary,
-  textDecoration: 'underline',
-  font: vars.typography.body,
+  font: vars.typography.monoSm,
 });
 
 export const empty = style({
-  padding: vars.spacing['24'],
-  font: vars.typography.body,
+  padding: vars.spacing['16'],
+  font: vars.typography.mono,
   color: vars.colors.text.subtle,
   textAlign: 'center',
+  margin: 0,
 });

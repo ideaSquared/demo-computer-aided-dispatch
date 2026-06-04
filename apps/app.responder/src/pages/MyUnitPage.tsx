@@ -1,3 +1,4 @@
+import { Badge, Button, Card, Heading } from '@cad/lib.ui';
 import { type ReactNode, useCallback, useEffect, useState } from 'react';
 import type { Session } from '../auth/session.js';
 import { type Unit, UnitApiError, unitApi } from '../services/units.js';
@@ -123,93 +124,92 @@ export function MyUnitPage({ session, subscribe, onOpenIncident }: Props): React
 
   if (!assignedUnitId) {
     return (
-      <div className={styles.card}>
+      <Card padding="16">
         <p className={styles.empty}>
           No unit is assigned to this responder. Ask a supervisor to bind your account to a unit.
         </p>
-      </div>
+      </Card>
     );
   }
 
   if (loading) {
     return (
-      <div className={styles.card}>
+      <Card padding="16">
         <p className={styles.empty}>loading unit…</p>
-      </div>
+      </Card>
     );
   }
 
   if (loadError || !unit) {
     return (
-      <div className={styles.card}>
+      <Card padding="16">
         <p className={styles.empty}>{loadError ?? 'unit not found'}</p>
-      </div>
+      </Card>
     );
   }
 
   return (
-    <div className={styles.card}>
-      <h2 className={styles.callsign}>{unit.callsign}</h2>
-      <div className={styles.metaRow}>
-        <span className={styles.statusBadge({ status: unit.status })}>
-          {STATUS_LABEL[unit.status]}
-        </span>
-        <span className={styles.meta}>{unit.tier}</span>
-        <span className={styles.meta}>v{unit.version}</span>
-      </div>
-
-      {unit.incidentId ? (
-        <button
-          type="button"
-          className={styles.link}
-          style={{
-            background: 'none',
-            border: 0,
-            padding: 0,
-            cursor: 'pointer',
-            textAlign: 'left',
-          }}
-          onClick={() => unit.incidentId && onOpenIncident(unit.incidentId)}
-        >
-          view current incident
-        </button>
-      ) : (
-        <p className={styles.meta}>no incident assigned</p>
-      )}
-
-      {mutateError && (
-        <div role="alert" className={styles.errorBanner}>
-          {mutateError}
+    <Card padding="16">
+      <div className={styles.cardInner}>
+        <Heading level={2} size="lg">
+          {unit.callsign}
+        </Heading>
+        <div className={styles.metaRow}>
+          <Badge tone="unitStatus" value={unit.status} variant="soft" size="md">
+            {STATUS_LABEL[unit.status]}
+          </Badge>
+          <Badge tone="tier" value={unit.tier} variant="soft" size="sm">
+            {unit.tier}
+          </Badge>
+          <span className={styles.meta}>v{unit.version}</span>
         </div>
-      )}
 
-      <div className={styles.buttonStack}>
-        <button
-          type="button"
-          className={styles.actionButton({ intent: 'primary' })}
-          disabled={!canPerform('acknowledge', unit.status) || mutating !== null}
-          onClick={() => void advance('acknowledge')}
-        >
-          {mutating === 'acknowledge' ? 'sending…' : 'acknowledge (en route)'}
-        </button>
-        <button
-          type="button"
-          className={styles.actionButton({ intent: 'primary' })}
-          disabled={!canPerform('arrived', unit.status) || mutating !== null}
-          onClick={() => void advance('arrived')}
-        >
-          {mutating === 'arrived' ? 'sending…' : 'on scene'}
-        </button>
-        <button
-          type="button"
-          className={styles.actionButton({ intent: 'success' })}
-          disabled={!canPerform('cleared', unit.status) || mutating !== null}
-          onClick={() => void advance('cleared')}
-        >
-          {mutating === 'cleared' ? 'sending…' : 'cleared'}
-        </button>
+        {unit.incidentId ? (
+          <Button
+            intent="ghost"
+            size="sm"
+            onClick={() => unit.incidentId && onOpenIncident(unit.incidentId)}
+          >
+            view current incident →
+          </Button>
+        ) : (
+          <p className={styles.meta}>no incident assigned</p>
+        )}
+
+        {mutateError && (
+          <div role="alert" className={styles.errorBanner}>
+            {mutateError}
+          </div>
+        )}
+
+        <div className={styles.buttonStack}>
+          <button
+            type="button"
+            className={styles.actionButton({ intent: 'primary' })}
+            disabled={!canPerform('acknowledge', unit.status) || mutating !== null}
+            onClick={() => void advance('acknowledge')}
+          >
+            {mutating === 'acknowledge' ? 'sending…' : 'acknowledge (en route)'}
+          </button>
+          <button
+            type="button"
+            className={styles.actionButton({ intent: 'primary' })}
+            disabled={!canPerform('arrived', unit.status) || mutating !== null}
+            onClick={() => void advance('arrived')}
+          >
+            {mutating === 'arrived' ? 'sending…' : 'on scene'}
+          </button>
+          <button
+            type="button"
+            className={styles.actionButton({ intent: 'success' })}
+            disabled={!canPerform('cleared', unit.status) || mutating !== null}
+            onClick={() => void advance('cleared')}
+          >
+            {mutating === 'cleared' ? 'sending…' : 'cleared'}
+          </button>
+        </div>
       </div>
-    </div>
+    </Card>
   );
 }
 

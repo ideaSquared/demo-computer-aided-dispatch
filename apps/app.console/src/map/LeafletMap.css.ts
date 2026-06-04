@@ -37,13 +37,13 @@ export const incidentMarker = recipe({
   },
   variants: {
     state: {
-      open: { background: vars.colors.intent.danger },
-      triaged: { background: vars.colors.intent.danger },
-      dispatched: { background: vars.colors.intent.warning },
-      enRoute: { background: vars.colors.intent.warning },
-      onScene: { background: vars.colors.brand.primary },
-      resolved: { background: vars.colors.intent.success },
-      cancelled: { background: vars.colors.text.subtle },
+      open: { background: vars.colors.incidentState.open },
+      triaged: { background: vars.colors.incidentState.triaged },
+      dispatched: { background: vars.colors.incidentState.dispatched },
+      enRoute: { background: vars.colors.incidentState.enRoute },
+      onScene: { background: vars.colors.incidentState.onScene },
+      resolved: { background: vars.colors.incidentState.resolved },
+      cancelled: { background: vars.colors.incidentState.cancelled },
     },
   },
   defaultVariants: { state: 'open' },
@@ -63,9 +63,9 @@ export const unitMarker = recipe({
   },
   variants: {
     tier: {
-      police: { color: vars.colors.brand.primary },
-      medical: { color: vars.colors.intent.success },
-      fire: { color: vars.colors.intent.danger },
+      police: { color: vars.colors.tier.police },
+      medical: { color: vars.colors.tier.medical },
+      fire: { color: vars.colors.tier.fire },
     },
   },
   defaultVariants: { tier: 'police' },

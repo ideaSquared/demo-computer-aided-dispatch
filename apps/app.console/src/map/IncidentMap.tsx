@@ -1,4 +1,4 @@
-import { Stack } from '@cad/lib.ui';
+import { Badge, Heading, Stack } from '@cad/lib.ui';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { UseFleetResult } from '../fleet/useFleet.js';
 import { bindIncidentActions, IncidentActions } from '../incidents/IncidentActions.js';
@@ -10,6 +10,13 @@ import type { Unit, UnitState } from '../services/units.js';
 import { UNIT_STATES } from '../services/units.js';
 import * as styles from './IncidentMap.css.js';
 import { LeafletMap } from './LeafletMap.js';
+
+const SEVERITY_TO_BADGE: Record<Severity, 's1' | 's2' | 's3' | 's4' | 's5'> = {
+  low: 's1',
+  medium: 's2',
+  high: 's4',
+  critical: 's5',
+};
 
 const SEVERITY_KEYS: ReadonlyArray<Severity> = ['low', 'medium', 'high', 'critical'];
 const UNIT_STATUS_KEYS: ReadonlyArray<UnitState> = UNIT_STATES;
@@ -124,9 +131,9 @@ export function IncidentMap({ identity, incidents: source, fleet }: IncidentMapP
                     }}
                   >
                     <span className={styles.noLocationTitle}>{incident.title}</span>
-                    <span className={board.stateBadge({ state: incident.state })}>
+                    <Badge tone="incidentState" value={incident.state} variant="soft" size="sm">
                       {incident.state}
-                    </span>
+                    </Badge>
                   </button>
                 ))}
               </div>
@@ -150,9 +157,9 @@ export function IncidentMap({ identity, incidents: source, fleet }: IncidentMapP
                     }}
                   >
                     <span className={styles.noLocationTitle}>{unit.callsign}</span>
-                    <span className={styles.unitStatusBadge({ status: unit.status })}>
+                    <Badge tone="unitStatus" value={unit.status} variant="soft" size="sm">
                       {unit.status}
-                    </span>
+                    </Badge>
                   </button>
                 ))}
               </div>
@@ -168,10 +175,16 @@ export function IncidentMap({ identity, incidents: source, fleet }: IncidentMapP
 function UnitPanel({ unit }: { unit: Unit }) {
   return (
     <div className={styles.panel}>
-      <h3 className={styles.panelTitle}>{unit.callsign}</h3>
+      <Heading level={3} size="sm">
+        {unit.callsign}
+      </Heading>
       <div className={styles.panelMeta}>
-        <span className={styles.meta}>{unit.tier}</span>
-        <span className={styles.unitStatusBadge({ status: unit.status })}>{unit.status}</span>
+        <Badge tone="tier" value={unit.tier} variant="soft" size="sm">
+          {unit.tier}
+        </Badge>
+        <Badge tone="unitStatus" value={unit.status} variant="soft" size="sm">
+          {unit.status}
+        </Badge>
       </div>
       <div className={styles.panelMeta}>
         <span className={styles.meta}>incident</span>
@@ -206,14 +219,25 @@ function DetailPanel({
 
   return (
     <div className={styles.panel}>
-      <h3 className={styles.panelTitle}>{incident.title}</h3>
+      <Heading level={3} size="sm">
+        {incident.title}
+      </Heading>
       <div className={styles.panelMeta}>
-        <span className={styles.meta}>{incident.tier}</span>
-        <span className={board.stateBadge({ state: incident.state })}>{incident.state}</span>
+        <Badge tone="tier" value={incident.tier} variant="soft" size="sm">
+          {incident.tier}
+        </Badge>
+        <Badge tone="incidentState" value={incident.state} variant="soft" size="sm">
+          {incident.state}
+        </Badge>
         {incident.severity ? (
-          <span className={board.severityBadge({ severity: incident.severity })}>
+          <Badge
+            tone="severity"
+            value={SEVERITY_TO_BADGE[incident.severity]}
+            variant="soft"
+            size="sm"
+          >
             {incident.severity}
-          </span>
+          </Badge>
         ) : (
           <span className={board.severityNone}>untriaged</span>
         )}

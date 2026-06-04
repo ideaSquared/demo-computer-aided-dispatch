@@ -1,4 +1,4 @@
-import { Button, Stack } from '@cad/lib.ui';
+import { Badge, Button, Card, Field, Heading, Input, Select, Stack, Table } from '@cad/lib.ui';
 import { type FormEvent, useState } from 'react';
 import type { Identity } from '../presence/identity.js';
 import type { Tier, Unit, UnitState } from '../services/units.js';
@@ -11,7 +11,6 @@ const STATUS_OPTIONS: ReadonlyArray<UnitState> = UNIT_STATES;
 
 export interface FleetPanelProps {
   readonly identity: Identity;
-  /** Shared fleet data source, lifted to the shell so every tab stays in sync. */
   readonly fleet: UseFleetResult;
 }
 
@@ -19,45 +18,74 @@ export function FleetPanel({ identity, fleet }: FleetPanelProps) {
   const { units, loading, error, register, markEnRoute, markOnScene, clear, takeOutOfService } =
     fleet;
 
+  const columns = [
+    { id: 'callsign', label: 'callsign', width: 'minmax(0, 1.2fr)' },
+    { id: 'tier', label: 'tier', width: '110px' },
+    { id: 'status', label: 'status', width: '130px' },
+    { id: 'incident', label: 'incident', width: 'minmax(0, 1fr)' },
+    { id: 'ver', label: 'ver', width: '60px', align: 'end' as const },
+    { id: 'actions', label: 'actions', width: 'minmax(180px, auto)', align: 'end' as const },
+  ];
+
+  const rows = units.map((unit) => ({
+    id: unit.id,
+    cells: [
+      <span key="cs" className={styles.callsign}>
+        {unit.callsign}
+      </span>,
+      <Badge key="tier" tone="tier" value={unit.tier} variant="soft" size="sm">
+        {unit.tier}
+      </Badge>,
+      <Badge key="status" tone="unitStatus" value={unit.status} variant="soft" size="sm">
+        {unit.status}
+      </Badge>,
+      unit.incidentId ? (
+        <span key="inc" className={styles.incidentRef}>
+          {unit.incidentId}
+        </span>
+      ) : (
+        <span key="inc" className={styles.incidentNone}>
+          —
+        </span>
+      ),
+      <span key="ver" className={styles.versionText}>
+        {unit.version}
+      </span>,
+      <div key="actions" className={styles.actions}>
+        <UnitActions
+          unit={unit}
+          onEnRoute={() => markEnRoute(unit)}
+          onOnScene={() => markOnScene(unit)}
+          onClear={() => clear(unit)}
+          onOutOfService={() => takeOutOfService(unit)}
+        />
+      </div>,
+    ],
+  }));
+
   return (
-    <Stack gap="24">
-      <RegisterUnitForm
-        defaultTier={identity.tier}
-        onRegister={(callsign, tier) => register({ callsign, tier })}
-      />
+    <Stack gap="16">
+      <Card padding="16" tone="default">
+        <RegisterUnitForm
+          defaultTier={identity.tier}
+          onRegister={(callsign, tier) => register({ callsign, tier })}
+        />
+      </Card>
 
       {error ? <div className={styles.errorBanner}>{error}</div> : null}
 
       <StatusLegend />
 
       <Stack gap="8">
-        <h2 className={styles.meta}>unit roster</h2>
-        <div className={styles.board}>
-          <div className={styles.header}>
-            <div>callsign</div>
-            <div>tier</div>
-            <div>status</div>
-            <div>incident</div>
-            <div>ver</div>
-            <div>actions</div>
-          </div>
-          {units.length === 0 ? (
-            <div className={styles.empty}>
-              {loading ? 'loading units…' : 'no units — register one above'}
-            </div>
-          ) : (
-            units.map((unit) => (
-              <UnitRow
-                key={unit.id}
-                unit={unit}
-                onEnRoute={() => markEnRoute(unit)}
-                onOnScene={() => markOnScene(unit)}
-                onClear={() => clear(unit)}
-                onOutOfService={() => takeOutOfService(unit)}
-              />
-            ))
-          )}
-        </div>
+        <Heading level={2} size="xs">
+          unit roster
+        </Heading>
+        <Table
+          columns={columns}
+          rows={rows}
+          density="compact"
+          empty={loading ? 'loading units…' : 'no units — register one above'}
+        />
       </Stack>
     </Stack>
   );
@@ -67,9 +95,9 @@ function StatusLegend() {
   return (
     <div className={styles.legend}>
       {STATUS_OPTIONS.map((status) => (
-        <span key={status} className={styles.legendItem}>
-          <span className={styles.statusBadge({ status })}>{status}</span>
-        </span>
+        <Badge key={status} tone="unitStatus" value={status} variant="soft" size="sm">
+          {status}
+        </Badge>
       ))}
     </div>
   );
@@ -94,36 +122,24 @@ function RegisterUnitForm({
   }
 
   return (
-    <form className={styles.form} onSubmit={submit}>
-      <div className={styles.field}>
-        <label className={styles.label} htmlFor="unit-callsign">
-          callsign
-        </label>
-        <input
+    <form className={styles.formGrid} onSubmit={submit}>
+      <Field label="callsign" htmlFor="unit-callsign">
+        <Input
           id="unit-callsign"
-          className={styles.input}
           value={callsign}
           onChange={(e) => setCallsign(e.target.value)}
           placeholder="e.g. Engine 7"
         />
-      </div>
-      <div className={styles.field}>
-        <label className={styles.label} htmlFor="unit-tier">
-          tier
-        </label>
-        <select
-          id="unit-tier"
-          className={styles.input}
-          value={tier}
-          onChange={(e) => setTier(e.target.value as Tier)}
-        >
+      </Field>
+      <Field label="tier" htmlFor="unit-tier">
+        <Select id="unit-tier" value={tier} onChange={(e) => setTier(e.target.value as Tier)}>
           {TIER_OPTIONS.map((t) => (
             <option key={t} value={t}>
               {t}
             </option>
           ))}
-        </select>
-      </div>
+        </Select>
+      </Field>
       <Button type="submit" intent="primary" size="md" disabled={!callsign.trim()}>
         register unit
       </Button>
@@ -131,52 +147,6 @@ function RegisterUnitForm({
   );
 }
 
-function UnitRow({
-  unit,
-  onEnRoute,
-  onOnScene,
-  onClear,
-  onOutOfService,
-}: {
-  unit: Unit;
-  onEnRoute: () => void;
-  onOnScene: () => void;
-  onClear: () => void;
-  onOutOfService: () => void;
-}) {
-  return (
-    <div className={styles.row}>
-      <div className={styles.callsign}>{unit.callsign}</div>
-      <div className={styles.meta}>{unit.tier}</div>
-      <div>
-        <span className={styles.statusBadge({ status: unit.status })}>{unit.status}</span>
-      </div>
-      <div>
-        {unit.incidentId ? (
-          <span className={styles.incidentRef}>{unit.incidentId}</span>
-        ) : (
-          <span className={styles.incidentNone}>—</span>
-        )}
-      </div>
-      <div className={styles.meta}>{unit.version}</div>
-      <div className={styles.actions}>
-        <UnitActions
-          unit={unit}
-          onEnRoute={onEnRoute}
-          onOnScene={onOnScene}
-          onClear={onClear}
-          onOutOfService={onOutOfService}
-        />
-      </div>
-    </div>
-  );
-}
-
-/**
- * State-appropriate status controls for a single unit. The button set is
- * derived purely from `unit.status`; every action carries the unit's
- * `expectedVersion` via the hook so a stale command 409s rather than racing.
- */
 function UnitActions({
   unit,
   onEnRoute,
