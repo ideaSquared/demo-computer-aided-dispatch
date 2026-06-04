@@ -11,6 +11,7 @@ const base: Operator = {
   tier: 'fire',
   roles: ['dispatcher'],
   disabled: false,
+  assignedUnitIds: [],
 };
 
 describe('toProtoOperator', () => {

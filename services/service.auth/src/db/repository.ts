@@ -10,6 +10,7 @@ interface OperatorRow {
   display_name: string;
   tier: string;
   disabled: boolean;
+  assigned_unit_ids: string[] | null;
 }
 interface OperatorWithRolesRow extends OperatorRow {
   roles: string[] | null;
@@ -52,6 +53,11 @@ function toOperator(row: OperatorWithRolesRow): Operator {
     tier: row.tier,
     roles,
     disabled: row.disabled,
+    // NULL on rows written before the assigned_unit_ids migration → []. The
+    // column has a default of '{}' going forward so NULL only shows up for
+    // already-revoked legacy sessions; coercing here keeps `Operator`'s
+    // contract (`readonly string[]`, never undefined) unconditional.
+    assignedUnitIds: row.assigned_unit_ids ?? [],
   };
 }
 
@@ -78,7 +84,7 @@ function toSession(row: SessionRow): Session {
 export async function findOperatorByEmail(db: DbClient, email: string): Promise<Operator | null> {
   const rows = await db<OperatorWithRolesRow[]>`
     SELECT
-      o.id, o.email, o.display_name, o.tier, o.disabled,
+      o.id, o.email, o.display_name, o.tier, o.disabled, o.assigned_unit_ids,
       COALESCE(array_agg(r.role ORDER BY r.role) FILTER (WHERE r.role IS NOT NULL), '{}') AS roles
     FROM operators o
     LEFT JOIN operator_roles r ON r.operator_id = o.id
@@ -93,7 +99,7 @@ export async function findOperatorByEmail(db: DbClient, email: string): Promise<
 export async function findOperatorById(db: DbClient, id: string): Promise<Operator | null> {
   const rows = await db<OperatorWithRolesRow[]>`
     SELECT
-      o.id, o.email, o.display_name, o.tier, o.disabled,
+      o.id, o.email, o.display_name, o.tier, o.disabled, o.assigned_unit_ids,
       COALESCE(array_agg(r.role ORDER BY r.role) FILTER (WHERE r.role IS NOT NULL), '{}') AS roles
     FROM operators o
     LEFT JOIN operator_roles r ON r.operator_id = o.id
@@ -113,7 +119,7 @@ export async function findOperatorById(db: DbClient, id: string): Promise<Operat
 export async function listAllOperators(db: DbClient): Promise<Operator[]> {
   const rows = await db<OperatorWithRolesRow[]>`
     SELECT
-      o.id, o.email, o.display_name, o.tier, o.disabled,
+      o.id, o.email, o.display_name, o.tier, o.disabled, o.assigned_unit_ids,
       COALESCE(array_agg(r.role ORDER BY r.role) FILTER (WHERE r.role IS NOT NULL), '{}') AS roles
     FROM operators o
     LEFT JOIN operator_roles r ON r.operator_id = o.id
@@ -179,6 +185,32 @@ export async function upsertOperator(
     throw new Error(`upsertOperator: row vanished for email '${input.email}'`);
   }
   return op;
+}
+
+/**
+ * Replace the operator's `assigned_unit_ids` column outright. Used by the
+ * dev `/dev/operators/:email/assignments` route the seed script calls after
+ * the resource service has registered the fleet — we couldn't know the unit
+ * uuids at boot time because they're minted by service.resource.
+ *
+ * Returns the freshly-read operator, NULL if the email is unknown. We don't
+ * try to merge into an existing array because the seed always writes the
+ * full target set and a future supervisor UI will probably do the same.
+ */
+export async function setAssignedUnitIds(
+  db: DbClient,
+  email: string,
+  unitIds: readonly string[],
+): Promise<Operator | null> {
+  const rows = await db<Array<{ id: string }>>`
+    UPDATE operators
+    SET assigned_unit_ids = ${[...unitIds]},
+        updated_at        = NOW()
+    WHERE email = ${email}
+    RETURNING id
+  `;
+  if (rows.length === 0) return null;
+  return findOperatorByEmail(db, email);
 }
 
 // ---- session queries -------------------------------------------------------
