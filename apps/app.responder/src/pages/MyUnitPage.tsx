@@ -1,8 +1,11 @@
-import { Badge, Button, Card, Heading } from '@cad/lib.ui';
+import { Badge, Card, Heading } from '@cad/lib.ui';
 import { type ReactNode, useCallback, useEffect, useState } from 'react';
 import type { Session } from '../auth/session.js';
+import { UnitMap } from '../map/UnitMap.js';
+import { type Incident, incidentApi } from '../services/incident.js';
 import { type Unit, UnitApiError, unitApi } from '../services/units.js';
 import type { useWs } from '../ws/useWs.js';
+import { IncidentPanel } from './IncidentPanel.js';
 import * as styles from './MyUnitPage.css.js';
 import {
   canPerform,
@@ -14,33 +17,39 @@ import {
 interface Props {
   readonly session: Session;
   readonly subscribe: ReturnType<typeof useWs>['subscribe'];
-  readonly onOpenIncident: (incidentId: string) => void;
 }
 
 /**
- * The responder's home page. Shows the assigned unit's current status, the
- * incident it's carrying (if any), and three big touch-target buttons for
- * the three transitions the responder owns.
+ * The responder MDT — the whole field screen, landscape. A left status rail
+ * (callsign, status, the three big touch-target buttons the responder owns)
+ * sits beside a right column that stacks the map over the carried incident's
+ * detail. Everything is visible at once: no navigation, no click-through.
  *
  * Data sources:
  *   - On mount, REST-fetch the unit so we have a baseline before WS catches
  *     up (the gateway's WS topic only carries live events; a unit that
  *     hasn't changed since the connection opened wouldn't replay).
- *   - Subscribe to `unit:<id>` for live status changes. The payload is the
- *     `UnitStatusChanged` event — we reconcile by reading status +
- *     incidentId + version onto the local copy.
+ *   - Subscribe to `unit:<id>` for live status changes; reconcile by reading
+ *     status + incidentId + version onto the local copy.
+ *   - When the unit carries an incident, REST-fetch it and subscribe to
+ *     `incident:<id>`. Its location drives the map marker; its detail fills
+ *     the right panel.
  *
  * If the operator has more than one assigned unit, we pick the first. A
  * unit-picker UI is a later iteration; today the seed binds one unit per
  * tier's responder so this is fine.
  */
-export function MyUnitPage({ session, subscribe, onOpenIncident }: Props): ReactNode {
+export function MyUnitPage({ session, subscribe }: Props): ReactNode {
   const assignedUnitId = session.operator.assignedUnitIds[0];
   const [unit, setUnit] = useState<Unit | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [mutating, setMutating] = useState<ResponderAction | null>(null);
   const [mutateError, setMutateError] = useState<string | null>(null);
+
+  const [incident, setIncident] = useState<Incident | null>(null);
+  const [incidentLoading, setIncidentLoading] = useState<boolean>(false);
+  const [incidentError, setIncidentError] = useState<string | null>(null);
 
   // Initial fetch — without this the page can sit empty if nothing happens
   // on the unit between login and first interaction.
@@ -71,8 +80,8 @@ export function MyUnitPage({ session, subscribe, onOpenIncident }: Props): React
     };
   }, [assignedUnitId]);
 
-  // Live updates — the gateway publishes `UnitStatusChanged` events on the
-  // `unit:<id>` topic. We patch status/incidentId/version onto the local
+  // Live unit updates — the gateway publishes `UnitStatusChanged` events on
+  // the `unit:<id>` topic. We patch status/incidentId/version onto the local
   // unit; everything else (callsign, tier, location) doesn't change in the
   // responder flow.
   useEffect(() => {
@@ -93,6 +102,46 @@ export function MyUnitPage({ session, subscribe, onOpenIncident }: Props): React
       });
     });
   }, [assignedUnitId, subscribe]);
+
+  // Carried incident — fetch it and follow `incident:<id>` so the map marker
+  // and the right-column detail track live. When the unit drops the incident
+  // (incidentId → null) we clear local incident state so the panel falls back
+  // to "standing by" and the map drops the scene marker.
+  const incidentId = unit?.incidentId ?? null;
+  useEffect(() => {
+    if (!incidentId) {
+      setIncident(null);
+      setIncidentError(null);
+      setIncidentLoading(false);
+      return;
+    }
+    let cancelled = false;
+    const load = async (): Promise<void> => {
+      try {
+        const next = await incidentApi.get(incidentId);
+        if (!cancelled) {
+          setIncident(next);
+          setIncidentError(null);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setIncidentError(err instanceof Error ? err.message : 'failed to load incident');
+        }
+      } finally {
+        if (!cancelled) setIncidentLoading(false);
+      }
+    };
+
+    setIncidentLoading(true);
+    void load();
+    const unsub = subscribe(`incident:${incidentId}`, () => {
+      void load();
+    });
+    return () => {
+      cancelled = true;
+      unsub();
+    };
+  }, [incidentId, subscribe]);
 
   const advance = useCallback(
     async (action: ResponderAction) => {
@@ -149,67 +198,69 @@ export function MyUnitPage({ session, subscribe, onOpenIncident }: Props): React
   }
 
   return (
-    <Card padding="16">
-      <div className={styles.cardInner}>
-        <Heading level={2} size="lg">
-          {unit.callsign}
-        </Heading>
-        <div className={styles.metaRow}>
-          <Badge tone="unitStatus" value={unit.status} variant="soft" size="md">
-            {STATUS_LABEL[unit.status]}
-          </Badge>
-          <Badge tone="tier" value={unit.tier} variant="soft" size="sm">
-            {unit.tier}
-          </Badge>
-          <span className={styles.meta}>v{unit.version}</span>
-        </div>
-
-        {unit.incidentId ? (
-          <Button
-            intent="ghost"
-            size="sm"
-            onClick={() => unit.incidentId && onOpenIncident(unit.incidentId)}
-          >
-            view current incident →
-          </Button>
-        ) : (
-          <p className={styles.meta}>no incident assigned</p>
-        )}
-
-        {mutateError && (
-          <div role="alert" className={styles.errorBanner}>
-            {mutateError}
+    <div className={styles.mdt}>
+      <Card padding="16">
+        <div className={styles.statusRail}>
+          <Heading level={2} size="lg">
+            {unit.callsign}
+          </Heading>
+          <div className={styles.metaRow}>
+            <Badge tone="unitStatus" value={unit.status} variant="soft" size="md">
+              {STATUS_LABEL[unit.status]}
+            </Badge>
+            <Badge tone="tier" value={unit.tier} variant="soft" size="sm">
+              {unit.tier}
+            </Badge>
+            <span className={styles.meta}>v{unit.version}</span>
           </div>
-        )}
 
-        <div className={styles.buttonStack}>
-          <button
-            type="button"
-            className={styles.actionButton({ intent: 'primary' })}
-            disabled={!canPerform('acknowledge', unit.status) || mutating !== null}
-            onClick={() => void advance('acknowledge')}
-          >
-            {mutating === 'acknowledge' ? 'sending…' : 'acknowledge (en route)'}
-          </button>
-          <button
-            type="button"
-            className={styles.actionButton({ intent: 'primary' })}
-            disabled={!canPerform('arrived', unit.status) || mutating !== null}
-            onClick={() => void advance('arrived')}
-          >
-            {mutating === 'arrived' ? 'sending…' : 'on scene'}
-          </button>
-          <button
-            type="button"
-            className={styles.actionButton({ intent: 'success' })}
-            disabled={!canPerform('cleared', unit.status) || mutating !== null}
-            onClick={() => void advance('cleared')}
-          >
-            {mutating === 'cleared' ? 'sending…' : 'cleared'}
-          </button>
+          {mutateError && (
+            <div role="alert" className={styles.errorBanner}>
+              {mutateError}
+            </div>
+          )}
+
+          <div className={styles.buttonStack}>
+            <button
+              type="button"
+              className={styles.actionButton({ intent: 'primary' })}
+              disabled={!canPerform('acknowledge', unit.status) || mutating !== null}
+              onClick={() => void advance('acknowledge')}
+            >
+              {mutating === 'acknowledge' ? 'sending…' : 'acknowledge (en route)'}
+            </button>
+            <button
+              type="button"
+              className={styles.actionButton({ intent: 'primary' })}
+              disabled={!canPerform('arrived', unit.status) || mutating !== null}
+              onClick={() => void advance('arrived')}
+            >
+              {mutating === 'arrived' ? 'sending…' : 'on scene'}
+            </button>
+            <button
+              type="button"
+              className={styles.actionButton({ intent: 'success' })}
+              disabled={!canPerform('cleared', unit.status) || mutating !== null}
+              onClick={() => void advance('cleared')}
+            >
+              {mutating === 'cleared' ? 'sending…' : 'cleared'}
+            </button>
+          </div>
         </div>
+      </Card>
+
+      <div className={styles.rightColumn}>
+        <div className={styles.mapCell}>
+          <UnitMap
+            unit={{ location: unit.location, tier: unit.tier }}
+            incident={incident ? { location: incident.location, state: incident.state } : null}
+          />
+        </div>
+        <Card padding="16">
+          <IncidentPanel incident={incident} loading={incidentLoading} error={incidentError} />
+        </Card>
       </div>
-    </Card>
+    </div>
   );
 }
 
