@@ -66,6 +66,17 @@ export interface IncidentCancelled extends DomainEventBase {
   cancelledBy: string;
 }
 
+/**
+ * Cross-tier "major incident" declaration. Sticky: once present in the log
+ * the aggregate stays `major: true` forever (no downgrade event in this
+ * iteration). Re-declarations are dropped at the command layer so only the
+ * first one ever lands in the log.
+ */
+export interface IncidentMajorDeclared extends DomainEventBase {
+  type: 'IncidentMajorDeclared';
+  declaredBy: string;
+}
+
 export type IncidentEvent =
   | IncidentOpened
   | IncidentTriaged
@@ -73,6 +84,7 @@ export type IncidentEvent =
   | IncidentMarkedEnRoute
   | IncidentUnitArrived
   | IncidentResolved
-  | IncidentCancelled;
+  | IncidentCancelled
+  | IncidentMajorDeclared;
 
 export type IncidentEventType = IncidentEvent['type'];

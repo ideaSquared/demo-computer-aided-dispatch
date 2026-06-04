@@ -171,3 +171,42 @@ export function cancel(state: IncidentState | null, input: CancelInput): Inciden
     },
   ];
 }
+
+export interface DeclareMajorInput {
+  declaredBy: string;
+  occurredAt: string;
+}
+
+/**
+ * "Major incident" declaration. Cross-tier action, gated at the gateway on
+ * the commander role's `declareMajor Incident` ability. Idempotent at the
+ * domain layer: re-declarations on an already-major incident produce no
+ * event, so the audit log carries only the first one.
+ *
+ * Unlike most commands here the action is legal in every status (including
+ * terminal) — the flag is orthogonal to the lifecycle and the major-flag
+ * audit trail must survive resolve/cancel.
+ */
+export function declareMajor(
+  state: IncidentState | null,
+  input: DeclareMajorInput,
+): IncidentEvent[] {
+  if (state === null) {
+    throw new InvariantError('cannot declare major: incident does not exist');
+  }
+  if (input.declaredBy.trim() === '') {
+    throw new InvariantError('cannot declare major: declaredBy is required');
+  }
+  if (state.major) {
+    // Idempotent: redeclarations produce no event, leaving the audit log
+    // with the first declaration only.
+    return [];
+  }
+  return [
+    {
+      type: 'IncidentMajorDeclared',
+      occurredAt: input.occurredAt,
+      declaredBy: input.declaredBy,
+    },
+  ];
+}

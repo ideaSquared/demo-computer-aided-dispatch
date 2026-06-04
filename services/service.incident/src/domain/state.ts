@@ -32,6 +32,12 @@ export interface IncidentState {
   unitsOnScene: string[];
   openedAt: string;
   updatedAt: string;
+  /**
+   * Sticky "major incident" flag. Set by `IncidentMajorDeclared`; never
+   * cleared. Independent of `status` — a resolved incident can still be
+   * major (for the audit trail).
+   */
+  major: boolean;
 }
 
 /**
@@ -59,6 +65,7 @@ export function apply(state: IncidentState | null, event: IncidentEvent): Incide
       unitsOnScene: [],
       openedAt: event.occurredAt,
       updatedAt: event.occurredAt,
+      major: false,
     };
   }
 
@@ -93,6 +100,9 @@ export function apply(state: IncidentState | null, event: IncidentEvent): Incide
       return { ...state, status: 'resolved', updatedAt: event.occurredAt };
     case 'IncidentCancelled':
       return { ...state, status: 'cancelled', updatedAt: event.occurredAt };
+    case 'IncidentMajorDeclared':
+      // Status untouched: the major flag is orthogonal to the lifecycle.
+      return { ...state, major: true, updatedAt: event.occurredAt };
   }
 }
 

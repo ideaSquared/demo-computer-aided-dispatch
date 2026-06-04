@@ -104,6 +104,7 @@ interface DbViewRow {
   version: number;
   updated_at: string;
   ai: unknown;
+  major: boolean;
 }
 
 function projectRow(row: DbViewRow): ViewRow {
@@ -111,7 +112,10 @@ function projectRow(row: DbViewRow): ViewRow {
     id: row.id,
     status: row.status,
     tier: row.tier,
-    state: row.state,
+    // Authoritative `major` is the denormalised column — pre-major-migration
+    // rows have no `major` key in the JSONB `state`, but the column was
+    // back-filled to `false` and every subsequent write keeps both in sync.
+    state: { ...row.state, major: row.major },
     version: Number(row.version),
     updated_at: row.updated_at,
     ai_suggestion: coerceAi(row.ai),
@@ -120,7 +124,7 @@ function projectRow(row: DbViewRow): ViewRow {
 
 export async function loadView(db: DbClient, aggregateId: string): Promise<ViewRow | null> {
   const rows = await db<DbViewRow[]>`
-    SELECT iv.id, iv.status, iv.tier, iv.state, iv.version, iv.updated_at,
+    SELECT iv.id, iv.status, iv.tier, iv.state, iv.version, iv.updated_at, iv.major,
       CASE WHEN ai.incident_id IS NULL THEN NULL ELSE
         jsonb_build_object(
           'severity', ai.severity,
@@ -150,7 +154,7 @@ export async function listOpen(
   const openStatuses = ['open', 'triaged', 'dispatched', 'enRoute', 'onScene'];
   const rows = opts.tier
     ? await db<DbViewRow[]>`
-        SELECT iv.id, iv.status, iv.tier, iv.state, iv.version, iv.updated_at,
+        SELECT iv.id, iv.status, iv.tier, iv.state, iv.version, iv.updated_at, iv.major,
           CASE WHEN ai.incident_id IS NULL THEN NULL ELSE
             jsonb_build_object(
               'severity', ai.severity,
@@ -167,7 +171,7 @@ export async function listOpen(
         LIMIT ${opts.limit}
       `
     : await db<DbViewRow[]>`
-        SELECT iv.id, iv.status, iv.tier, iv.state, iv.version, iv.updated_at,
+        SELECT iv.id, iv.status, iv.tier, iv.state, iv.version, iv.updated_at, iv.major,
           CASE WHEN ai.incident_id IS NULL THEN NULL ELSE
             jsonb_build_object(
               'severity', ai.severity,
@@ -269,22 +273,26 @@ export async function appendAndProject(
 
   // Read-model upsert. status + tier are denormalised so ListOpen can hit
   // its (status) and (status, tier) indexes without unpacking the JSONB.
+  // `major` is denormalised too so a future filter ("all major incidents")
+  // doesn't have to unpack the JSONB; same write cost either way.
   await tx`
-    INSERT INTO incident_view (id, status, tier, state, version, updated_at)
+    INSERT INTO incident_view (id, status, tier, state, version, updated_at, major)
     VALUES (
       ${aggregateId},
       ${nextState.status},
       ${nextState.tier},
       ${tx.json(asJson(nextState))},
       ${newVersion},
-      ${nextState.updatedAt}
+      ${nextState.updatedAt},
+      ${nextState.major}
     )
     ON CONFLICT (id) DO UPDATE SET
       status = EXCLUDED.status,
       tier = EXCLUDED.tier,
       state = EXCLUDED.state,
       version = EXCLUDED.version,
-      updated_at = EXCLUDED.updated_at
+      updated_at = EXCLUDED.updated_at,
+      major = EXCLUDED.major
   `;
 
   return { newVersion };

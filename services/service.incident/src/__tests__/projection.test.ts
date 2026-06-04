@@ -13,6 +13,7 @@ const base: IncidentState = {
   unitsOnScene: [],
   openedAt: '2026-06-02T10:00:00.000Z',
   updatedAt: '2026-06-02T10:00:00.000Z',
+  major: false,
 };
 
 describe('toProtoIncident', () => {
@@ -65,6 +66,11 @@ describe('toProtoIncident', () => {
     );
     const wire = IncidentV1.Incident.encode(proto).finish();
     expect(IncidentV1.Incident.decode(wire)).toEqual(proto);
+  });
+
+  it('mirrors the major flag from the folded state', () => {
+    expect(toProtoIncident('id', base, 1).major).toBe(false);
+    expect(toProtoIncident('id', { ...base, major: true }, 2).major).toBe(true);
   });
 });
 
