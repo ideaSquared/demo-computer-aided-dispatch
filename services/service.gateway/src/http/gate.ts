@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { type NatsConnection, publish, subjects } from '@cad/events';
 import { AuditActionTakenSchema } from '@cad/events/audit';
 import { type Action, subject as caslSubject } from '@cad/lib.authz';
@@ -7,6 +7,7 @@ import { Metadata } from '@grpc/grpc-js';
 import type { FastifyBaseLogger, FastifyReply, FastifyRequest } from 'fastify';
 import { authenticate, bypassFromUrl, type Session } from '../auth.js';
 import type { AuthClient } from '../clients/auth.js';
+import { COOKIE_ACCESS, COOKIE_CSRF } from './auth.js';
 
 /**
  * HTTP-side authentication + CASL gate. Every restricted route calls
@@ -43,11 +44,23 @@ export type GateSubject =
   | { kind: 'Audit'; tier?: string | undefined };
 
 /**
- * Validate the Authorization header (or fall through to dev bypass). Returns
- * the session, or null if authentication failed AND no bypass is in play
- * — the caller should then 401.
+ * Validate the access token (cookie first, then Authorization header for
+ * legacy smokes), or fall through to dev bypass. Returns the session, or
+ * null if authentication failed AND no bypass is in play — the caller
+ * should then 401.
+ *
+ * Cookie path is canonical now that the console runs on HttpOnly cookies;
+ * the Bearer fallback exists so existing Phase 1-3 smokes (which curl with
+ * `-H 'Authorization: Bearer …'`) keep passing without rewriting.
  */
 export async function resolveSession(req: FastifyRequest, deps: GateDeps): Promise<Session | null> {
+  const cookieToken = req.cookies?.[COOKIE_ACCESS];
+  if (typeof cookieToken === 'string' && cookieToken.length > 0) {
+    const session = await authenticate(deps.authClient, cookieToken);
+    if (session) return session;
+    // Cookie present but invalid — never silently fall through to bypass.
+    return null;
+  }
   const header = req.headers.authorization;
   if (typeof header === 'string') {
     const match = /^Bearer\s+(.+)$/i.exec(header);
@@ -66,6 +79,56 @@ export async function resolveSession(req: FastifyRequest, deps: GateDeps): Promi
 }
 
 /**
+ * State-changing HTTP methods that must carry a CSRF token (double-submit
+ * cookie + header). Read-only methods skip the gate so the console can
+ * GET `/api/auth/me` etc. with just the cookie.
+ */
+const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+
+/**
+ * Verify the CSRF double-submit. Returns `true` if the request is allowed,
+ * `false` if the reply has been written (403). Skipped for:
+ *   - safe methods (GET/HEAD/OPTIONS)
+ *   - dev-bypass sessions (no CSRF binding — bypass means the request never
+ *     authenticated to begin with)
+ *   - the login + refresh routes (no session yet to bind against — they
+ *     mint the CSRF token in their response)
+ *
+ * For every other mutating request: sha256 of the `x-csrf-token` header
+ * must equal `session.csrfHash`, AND the header must equal the `cad_csrf`
+ * cookie value (the double-submit half). Mismatch on either is a 403.
+ */
+export function verifyCsrf(req: FastifyRequest, reply: FastifyReply, session: Session): boolean {
+  if (!MUTATING_METHODS.has(req.method.toUpperCase())) return true;
+  // Dev-bypass sessions skip CSRF — there's no real token pair to compare
+  // against and the existing smokes don't send cookies.
+  if (session.csrfHash === '') return true;
+  const headerToken = req.headers['x-csrf-token'];
+  const headerValue = Array.isArray(headerToken) ? headerToken[0] : headerToken;
+  const cookieValue = req.cookies?.[COOKIE_CSRF];
+  if (
+    typeof headerValue !== 'string' ||
+    headerValue.length === 0 ||
+    typeof cookieValue !== 'string' ||
+    cookieValue.length === 0 ||
+    headerValue !== cookieValue
+  ) {
+    reply.code(403).send({
+      error: { code: 'CSRF_MISSING', message: 'missing or mismatched CSRF token' },
+    });
+    return false;
+  }
+  const hash = createHash('sha256').update(headerValue).digest('hex');
+  if (hash !== session.csrfHash) {
+    reply.code(403).send({
+      error: { code: 'CSRF_INVALID', message: 'CSRF token does not match session' },
+    });
+    return false;
+  }
+  return true;
+}
+
+/**
  * Edge-enforcement guard. Returns the session on allow; on deny it has
  * already written the reply and the caller must return immediately.
  */
@@ -81,6 +144,11 @@ export async function requireAbility(
     reply
       .code(401)
       .send({ error: { code: 'UNAUTHENTICATED', message: 'missing or invalid access token' } });
+    return null;
+  }
+  // CSRF gate before CASL — a bad token on a mutating request shouldn't
+  // even bill an audit deny; it's just rejected at the edge.
+  if (!verifyCsrf(req, reply, session)) {
     return null;
   }
   // Build the CASL check target. With at least one condition field (e.g.

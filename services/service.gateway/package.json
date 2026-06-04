@@ -21,6 +21,7 @@
     "@cad/proto": "workspace:*",
     "@cad/redis": "workspace:*",
     "@casl/ability": "^6.7.3",
+    "@fastify/cookie": "^11.0.2",
     "@fastify/websocket": "^11.0.1",
     "@grpc/grpc-js": "^1.13.6",
     "fastify": "^5.8.5",
