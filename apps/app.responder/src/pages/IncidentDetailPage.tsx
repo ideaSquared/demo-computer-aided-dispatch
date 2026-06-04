@@ -1,7 +1,15 @@
+import { Badge, Button, Card, Heading } from '@cad/lib.ui';
 import { type ReactNode, useEffect, useState } from 'react';
-import { type Incident, incidentApi } from '../services/incident.js';
+import { type Incident, incidentApi, type Severity } from '../services/incident.js';
 import type { useWs } from '../ws/useWs.js';
 import * as styles from './IncidentDetailPage.css.js';
+
+const SEVERITY_TO_BADGE: Record<Severity, 's1' | 's2' | 's3' | 's4' | 's5'> = {
+  low: 's1',
+  medium: 's2',
+  high: 's4',
+  critical: 's5',
+};
 
 interface Props {
   readonly incidentId: string;
@@ -14,12 +22,6 @@ interface Props {
  * coordinates, and `major` flag — what a responder rolling out the door
  * actually needs to see. State-changing actions belong to the dispatcher
  * console and the unit-side buttons on `MyUnitPage`.
- *
- * We REST-fetch on mount and subscribe to the `incident:<id>` topic for
- * live updates. The WS payload schema varies by event (opened/triaged/
- * dispatched/resolved/etc.), so rather than trying to reconcile each kind,
- * we just re-fetch on any event for the topic. Cheap on the wire and the
- * responder app doesn't have a busy enough screen for that to matter.
  */
 export function IncidentDetailPage({ incidentId, subscribe, onBack }: Props): ReactNode {
   const [incident, setIncident] = useState<Incident | null>(null);
@@ -47,8 +49,6 @@ export function IncidentDetailPage({ incidentId, subscribe, onBack }: Props): Re
     setLoading(true);
     void load();
 
-    // On any incident-side event, re-fetch. Simpler than per-event
-    // reconciliation and the responder UI sees one incident at a time.
     const unsub = subscribe(`incident:${incidentId}`, () => {
       void load();
     });
@@ -60,72 +60,91 @@ export function IncidentDetailPage({ incidentId, subscribe, onBack }: Props): Re
   }, [incidentId, subscribe]);
 
   return (
-    <div className={styles.card}>
-      <button type="button" className={styles.back} onClick={onBack}>
-        ← back to my unit
-      </button>
+    <Card padding="16">
+      <div className={styles.cardInner}>
+        <Button intent="ghost" size="sm" onClick={onBack}>
+          ← back to my unit
+        </Button>
 
-      {loading && !incident ? (
-        <p className={styles.empty}>loading incident…</p>
-      ) : error || !incident ? (
-        <p className={styles.empty}>{error ?? 'incident not found'}</p>
-      ) : (
-        <>
-          <h2 className={styles.title}>{incident.title}</h2>
+        {loading && !incident ? (
+          <p className={styles.empty}>loading incident…</p>
+        ) : error || !incident ? (
+          <p className={styles.empty}>{error ?? 'incident not found'}</p>
+        ) : (
+          <>
+            <Heading level={2} size="md">
+              {incident.title}
+            </Heading>
 
-          <div className={styles.metaRow}>
-            <span className={styles.badge}>{incident.tier}</span>
-            <span className={styles.badge}>{incident.state}</span>
-            {incident.severity && (
-              <span className={styles.severityBadge({ severity: incident.severity })}>
-                {incident.severity}
-              </span>
-            )}
-            {incident.major && <span className={styles.majorBadge}>major</span>}
-          </div>
+            <div className={styles.metaRow}>
+              <Badge tone="tier" value={incident.tier} variant="soft" size="sm">
+                {incident.tier}
+              </Badge>
+              <Badge tone="incidentState" value={incident.state} variant="soft" size="sm">
+                {incident.state}
+              </Badge>
+              {incident.severity && (
+                <Badge
+                  tone="severity"
+                  value={SEVERITY_TO_BADGE[incident.severity]}
+                  variant="soft"
+                  size="sm"
+                >
+                  {incident.severity}
+                </Badge>
+              )}
+              {incident.major && (
+                <Badge tone="intent" value="danger" variant="solid" size="sm">
+                  major
+                </Badge>
+              )}
+            </div>
 
-          <section className={styles.section}>
-            <h3 className={styles.sectionTitle}>location</h3>
-            <p className={styles.sectionBody}>
-              {incident.location
-                ? `${incident.location.lat.toFixed(5)}, ${incident.location.lng.toFixed(5)}`
-                : 'no coordinates'}
-            </p>
-          </section>
-
-          {incident.aiSuggestion && (
             <section className={styles.section}>
-              <h3 className={styles.sectionTitle}>AI triage suggestion</h3>
-              <div className={styles.aiChip}>
-                <strong>
-                  {incident.aiSuggestion.severity} ·{' '}
-                  {Math.round(incident.aiSuggestion.confidence * 100)}%
-                </strong>
-                <span>{incident.aiSuggestion.rationale}</span>
-                <span className={styles.badge}>{incident.aiSuggestion.modelVersion}</span>
-              </div>
+              <h3 className={styles.sectionTitle}>location</h3>
+              <p className={styles.sectionBody}>
+                {incident.location
+                  ? `${incident.location.lat.toFixed(5)}, ${incident.location.lng.toFixed(5)}`
+                  : 'no coordinates'}
+              </p>
             </section>
-          )}
 
-          <section className={styles.section}>
-            <h3 className={styles.sectionTitle}>dispatch</h3>
-            <p className={styles.sectionBody}>
-              {incident.unitIds.length === 0
-                ? 'no units dispatched yet'
-                : `${incident.unitIds.length} unit(s) dispatched${
-                    incident.unitsOnScene.length > 0
-                      ? `, ${incident.unitsOnScene.length} on scene`
-                      : ''
-                  }`}
-            </p>
-          </section>
+            {incident.aiSuggestion && (
+              <section className={styles.section}>
+                <h3 className={styles.sectionTitle}>AI triage suggestion</h3>
+                <div className={styles.aiChip}>
+                  <span className={styles.aiChipHeader}>
+                    {incident.aiSuggestion.severity} ·{' '}
+                    {Math.round(incident.aiSuggestion.confidence * 100)}%
+                  </span>
+                  <span>{incident.aiSuggestion.rationale}</span>
+                  <Badge tone="neutral" variant="outline" size="sm">
+                    {incident.aiSuggestion.modelVersion}
+                  </Badge>
+                </div>
+              </section>
+            )}
 
-          <section className={styles.section}>
-            <h3 className={styles.sectionTitle}>opened</h3>
-            <p className={styles.sectionBody}>{new Date(incident.openedAt).toLocaleString()}</p>
-          </section>
-        </>
-      )}
-    </div>
+            <section className={styles.section}>
+              <h3 className={styles.sectionTitle}>dispatch</h3>
+              <p className={styles.sectionBody}>
+                {incident.unitIds.length === 0
+                  ? 'no units dispatched yet'
+                  : `${incident.unitIds.length} unit(s) dispatched${
+                      incident.unitsOnScene.length > 0
+                        ? `, ${incident.unitsOnScene.length} on scene`
+                        : ''
+                    }`}
+              </p>
+            </section>
+
+            <section className={styles.section}>
+              <h3 className={styles.sectionTitle}>opened</h3>
+              <p className={styles.sectionBody}>{new Date(incident.openedAt).toLocaleString()}</p>
+            </section>
+          </>
+        )}
+      </div>
+    </Card>
   );
 }

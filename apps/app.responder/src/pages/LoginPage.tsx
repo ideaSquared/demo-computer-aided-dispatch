@@ -1,4 +1,4 @@
-import { Button, Stack } from '@cad/lib.ui';
+import { Badge, Button, Field, Heading, Input, Stack } from '@cad/lib.ui';
 import { type FormEvent, type ReactNode, useEffect, useState } from 'react';
 import { useAuth } from '../auth/AuthProvider.js';
 import {
@@ -14,9 +14,6 @@ import * as styles from './LoginPage.css.js';
  * + email/password form), but every seeded persona without the `responder`
  * role is *hidden* — the UI behind the login is responder-only, so showing
  * a dispatcher in the grid would invite an obvious dead-end.
- *
- * The login itself also rejects non-responder roles (`WrongRoleError` from
- * `AuthProvider.login`), which catches the manual email/password path.
  */
 export function LoginPage(): ReactNode {
   const { login, error } = useAuth();
@@ -39,8 +36,6 @@ export function LoginPage(): ReactNode {
         const parsed = SeededOperatorsResponseSchema.safeParse(json);
         if (!cancelled) {
           if (parsed.success) {
-            // Drop non-responder personas so the grid can't lead the user
-            // somewhere this app refuses to go.
             setSeeded(
               parsed.data.seededOperators.filter((op) => op.roles.includes(RESPONDER_ROLE)),
             );
@@ -62,8 +57,7 @@ export function LoginPage(): ReactNode {
     try {
       await login({ email: entry.email, password: entry.password });
     } catch {
-      // `error` carries the message — could be `WrongRoleError` or a real
-      // auth failure; both render in the banner.
+      // `error` carries the message.
     } finally {
       setBusyEmail(null);
     }
@@ -76,7 +70,7 @@ export function LoginPage(): ReactNode {
     try {
       await login({ email, password });
     } catch {
-      /* same — surfaced via `error` */
+      /* surfaced via `error` */
     } finally {
       setBusyEmail(null);
     }
@@ -86,7 +80,9 @@ export function LoginPage(): ReactNode {
     <main className={styles.shell}>
       <Stack gap="24">
         <Stack gap="4" align="start">
-          <h1 className={styles.heading}>responder</h1>
+          <Heading level={1} size="lg">
+            responder
+          </Heading>
           <p className={styles.subhead}>
             Field interface for crewed units. Sign in with the account assigned to your unit.
           </p>
@@ -100,9 +96,9 @@ export function LoginPage(): ReactNode {
 
         {seeded && seeded.length > 0 && (
           <section className={styles.section} aria-labelledby="dev-switcher-heading">
-            <h2 id="dev-switcher-heading" className={styles.sectionTitle}>
+            <Heading level={2} id="dev-switcher-heading" size="sm">
               responder personas
-            </h2>
+            </Heading>
             <p className={styles.muted}>
               Dev role-switcher (password <code>dev</code> for all). Only personas with the{' '}
               <code>responder</code> role are shown.
@@ -113,11 +109,13 @@ export function LoginPage(): ReactNode {
                   <div className={styles.cardName}>{op.displayName}</div>
                   <div className={styles.cardMeta}>{op.email}</div>
                   <div className={styles.badges}>
-                    <span className={styles.badge}>{op.tier}</span>
+                    <Badge tone="tier" value={op.tier} variant="outline" size="sm">
+                      {op.tier}
+                    </Badge>
                     {op.roles.map((r) => (
-                      <span key={r} className={styles.badge}>
+                      <Badge key={r} tone="neutral" variant="outline" size="sm">
                         {r}
-                      </span>
+                      </Badge>
                     ))}
                   </div>
                   <Button
@@ -142,39 +140,33 @@ export function LoginPage(): ReactNode {
         )}
 
         <section className={styles.section} aria-labelledby="manual-signin-heading">
-          <h2 id="manual-signin-heading" className={styles.sectionTitle}>
+          <Heading level={2} id="manual-signin-heading" size="sm">
             sign in with credentials
-          </h2>
+          </Heading>
           <form className={styles.form} onSubmit={(e) => void onSubmit(e)}>
-            <div className={styles.field}>
-              <label htmlFor="email" className={styles.label}>
-                email
-              </label>
-              <input
+            <Field label="email" htmlFor="email">
+              <Input
                 id="email"
                 type="email"
                 autoComplete="username"
                 inputMode="email"
+                size="lg"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className={styles.input}
                 required
               />
-            </div>
-            <div className={styles.field}>
-              <label htmlFor="password" className={styles.label}>
-                password
-              </label>
-              <input
+            </Field>
+            <Field label="password" htmlFor="password">
+              <Input
                 id="password"
                 type="password"
                 autoComplete="current-password"
+                size="lg"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className={styles.input}
                 required
               />
-            </div>
+            </Field>
             <Button type="submit" disabled={busyEmail !== null || !email || !password}>
               {busyEmail !== null ? 'signing in…' : 'sign in'}
             </Button>

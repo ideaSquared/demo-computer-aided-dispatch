@@ -1,4 +1,4 @@
-import { Button } from '@cad/lib.ui';
+import { Button, Select } from '@cad/lib.ui';
 import { useEffect, useMemo, useState } from 'react';
 import type { Incident, IncidentApi, Severity } from '../services/incident.js';
 import { incidentApi as defaultIncidentApi, SEVERITIES } from '../services/incident.js';
@@ -83,8 +83,8 @@ export function IncidentActions({
   return (
     <>
       {incident.state === 'open' ? (
-        <select
-          className={styles.input}
+        <Select
+          size="sm"
           aria-label="triage severity"
           defaultValue=""
           onChange={(e) => {
@@ -100,7 +100,7 @@ export function IncidentActions({
               {s}
             </option>
           ))}
-        </select>
+        </Select>
       ) : null}
 
       {incident.state === 'triaged' ? (
@@ -304,7 +304,7 @@ function DispatchControl({
                   onChange={() => toggle(unit.id)}
                 />
                 <span className={styles.pickerCallsign}>{unit.callsign}</span>
-                <span className={styles.meta}>
+                <span className={styles.metaText}>
                   {distance !== undefined ? formatDistance(distance) : unit.tier}
                 </span>
               </label>

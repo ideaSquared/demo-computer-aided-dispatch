@@ -1,4 +1,4 @@
-import { Button, Stack } from '@cad/lib.ui';
+import { Badge, Button, Field, Heading, Input, Stack } from '@cad/lib.ui';
 import { type FormEvent, type ReactNode, useEffect, useState } from 'react';
 import { authedFetch } from '../services/http.js';
 import { useAuth } from './AuthProvider.js';
@@ -78,7 +78,9 @@ export function LoginPage(): ReactNode {
     <main className={styles.shell}>
       <Stack gap="24">
         <Stack gap="4" align="start">
-          <h1 className={styles.heading}>operator console</h1>
+          <Heading level={1} size="xl">
+            operator console
+          </Heading>
           <p className={styles.subhead}>
             Sign in to start dispatching. Phase 4 — seeded personas live below.
           </p>
@@ -92,9 +94,9 @@ export function LoginPage(): ReactNode {
 
         {seeded && seeded.length > 0 && (
           <section className={styles.section} aria-labelledby="dev-switcher-heading">
-            <h2 id="dev-switcher-heading" className={styles.sectionTitle}>
+            <Heading level={2} id="dev-switcher-heading" size="sm">
               dev role switcher
-            </h2>
+            </Heading>
             <p className={styles.muted}>
               Seeded operators (password <code>dev</code> for all). Pick a persona to test the
               permission gates from that vantage point.
@@ -105,7 +107,9 @@ export function LoginPage(): ReactNode {
                   <div className={styles.cardName}>{op.displayName}</div>
                   <div className={styles.cardMeta}>{op.email}</div>
                   <div className={styles.badges}>
-                    <span className={styles.tierBadge({ tier: op.tier })}>{op.tier}</span>
+                    <Badge tone="tier" value={op.tier} variant="outline" size="sm">
+                      {op.tier}
+                    </Badge>
                     {op.roles.map((r) => (
                       <span key={r} className={styles.roleBadge}>
                         {r}
@@ -137,38 +141,30 @@ export function LoginPage(): ReactNode {
         )}
 
         <section className={styles.section} aria-labelledby="manual-signin-heading">
-          <h2 id="manual-signin-heading" className={styles.sectionTitle}>
+          <Heading level={2} id="manual-signin-heading" size="sm">
             sign in with credentials
-          </h2>
+          </Heading>
           <form className={styles.form} onSubmit={(e) => void onSubmit(e)}>
-            <div className={styles.field}>
-              <label htmlFor="email" className={styles.label}>
-                email
-              </label>
-              <input
+            <Field label="email" htmlFor="email">
+              <Input
                 id="email"
                 type="email"
                 autoComplete="username"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className={styles.input}
                 required
               />
-            </div>
-            <div className={styles.field}>
-              <label htmlFor="password" className={styles.label}>
-                password
-              </label>
-              <input
+            </Field>
+            <Field label="password" htmlFor="password">
+              <Input
                 id="password"
                 type="password"
                 autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className={styles.input}
                 required
               />
-            </div>
+            </Field>
             <Button type="submit" disabled={busyEmail !== null || !email || !password}>
               {busyEmail !== null ? 'signing in…' : 'sign in'}
             </Button>

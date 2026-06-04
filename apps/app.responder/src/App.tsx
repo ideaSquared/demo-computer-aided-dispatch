@@ -1,4 +1,4 @@
-import { Button, Stack } from '@cad/lib.ui';
+import { Badge, Button, Heading, Stack, StatusDot } from '@cad/lib.ui';
 import { type ReactNode, useState } from 'react';
 import * as styles from './App.css.js';
 import { AuthProvider, useAuth } from './auth/AuthProvider.js';
@@ -7,13 +7,6 @@ import { IncidentDetailPage } from './pages/IncidentDetailPage.js';
 import { LoginPage } from './pages/LoginPage.js';
 import { MyUnitPage } from './pages/MyUnitPage.js';
 import { useWs } from './ws/useWs.js';
-
-/**
- * Responder app shell. Single-column, one-page-at-a-time. Routing is local
- * state (which page is showing) rather than `react-router` because the
- * navigation graph is tiny: MyUnit → IncidentDetail → back. A router pulls
- * in URL plumbing we don't need yet; if we add more pages we revisit this.
- */
 
 export function App(): ReactNode {
   return (
@@ -29,8 +22,10 @@ function Gate(): ReactNode {
     return (
       <main className={styles.shell}>
         <Stack gap="16" align="start">
-          <h1 className={styles.heading}>responder</h1>
-          <p className={styles.identityText}>restoring session…</p>
+          <Heading level={1} size="md">
+            responder
+          </Heading>
+          <p className={styles.loading}>restoring session…</p>
         </Stack>
       </main>
     );
@@ -42,10 +37,6 @@ function Gate(): ReactNode {
 type Page = { kind: 'my-unit' } | { kind: 'incident'; incidentId: string };
 
 function Shell({ session }: { session: Session }): ReactNode {
-  // No token in the URL — the gateway reads the `cad_access` cookie off the
-  // WS upgrade. The whole shell unmounts on logout (the Gate switches to
-  // LoginPage when `session` goes null), so a fresh login means a fresh WS
-  // connection automatically.
   const url = wsUrlFor();
   const { status, subscribe } = useWs({ url });
   const { logout, switchOperator } = useAuth();
@@ -53,18 +44,24 @@ function Shell({ session }: { session: Session }): ReactNode {
 
   return (
     <main className={styles.shell}>
-      <div className={styles.identityBar}>
-        <div>
-          <h1 className={styles.heading}>responder</h1>
-          <div className={styles.identityText}>
-            {session.operator.displayName} ·{' '}
-            <span className={styles.tierLabel}>{session.operator.tier}</span>
+      <header className={styles.identityBar}>
+        <div className={styles.identityLeft}>
+          <h1 className={styles.identityName}>{session.operator.displayName}</h1>
+          <div className={styles.identityMeta}>
+            <Badge tone="tier" value={session.operator.tier} variant="soft" size="sm">
+              {session.operator.tier}
+            </Badge>
           </div>
         </div>
-        <div>
-          <span className={styles.connection({ state: status })}>{status}</span>
-        </div>
-      </div>
+        <output className={styles.identityRight} aria-label={`connection ${status}`}>
+          <StatusDot
+            tone="connection"
+            value={status}
+            pulse={status === 'connecting' || status === 'reconnecting'}
+          />
+          {status}
+        </output>
+      </header>
 
       {page.kind === 'my-unit' ? (
         <MyUnitPage

@@ -1,33 +1,24 @@
 import { vars } from '@cad/lib.ui/styles/theme.css';
 import { style } from '@vanilla-extract/css';
-import { recipe } from '@vanilla-extract/recipes';
 
 export const shell = style({
   padding: vars.spacing['32'],
+  paddingTop: vars.spacing['48'],
   maxWidth: '880px',
   margin: '0 auto',
   color: vars.colors.text.default,
 });
 
-export const heading = style({
-  font: vars.typography.heading.lg,
-  margin: 0,
-});
-
 export const subhead = style({
-  color: vars.colors.text.subtle,
+  color: vars.colors.text.muted,
   margin: 0,
+  font: vars.typography.mono,
 });
 
 export const section = style({
   display: 'flex',
   flexDirection: 'column',
   gap: vars.spacing['12'],
-});
-
-export const sectionTitle = style({
-  font: vars.typography.heading.md,
-  margin: 0,
 });
 
 export const grid = style({
@@ -52,39 +43,22 @@ export const cardName = style({
 });
 
 export const cardMeta = style({
-  font: vars.typography.mono,
+  font: vars.typography.monoSm,
   color: vars.colors.text.subtle,
-  fontSize: '12px',
 });
 
 export const badges = style({
   display: 'flex',
   flexWrap: 'wrap',
   gap: vars.spacing['4'],
-});
-
-export const tierBadge = recipe({
-  base: {
-    font: vars.typography.mono,
-    fontSize: '11px',
-    textTransform: 'uppercase',
-    letterSpacing: '0.05em',
-    padding: `${vars.spacing['2']} ${vars.spacing['8']}`,
-    borderRadius: vars.radii.full,
-    border: `1px solid ${vars.colors.surface.border}`,
-  },
-  variants: {
-    tier: {
-      police: { color: '#1d4ed8', borderColor: '#1d4ed8' },
-      medical: { color: '#15803d', borderColor: '#15803d' },
-      fire: { color: '#b91c1c', borderColor: '#b91c1c' },
-    },
-  },
+  alignItems: 'center',
 });
 
 export const roleBadge = style({
-  font: vars.typography.mono,
-  fontSize: '11px',
+  font: vars.typography.monoCaps,
+  fontSize: '10px',
+  textTransform: 'uppercase',
+  letterSpacing: '0.06em',
   padding: `${vars.spacing['2']} ${vars.spacing['8']}`,
   borderRadius: vars.radii.full,
   border: `1px solid ${vars.colors.surface.border}`,
@@ -101,38 +75,18 @@ export const form = style({
   borderRadius: vars.radii.md,
 });
 
-export const field = style({
-  display: 'flex',
-  flexDirection: 'column',
-  gap: vars.spacing['4'],
-});
-
-export const label = style({
-  font: vars.typography.mono,
-  fontSize: '12px',
-  color: vars.colors.text.subtle,
-});
-
-export const input = style({
-  font: vars.typography.body,
-  padding: `${vars.spacing['8']} ${vars.spacing['12']}`,
-  border: `1px solid ${vars.colors.surface.border}`,
-  borderRadius: vars.radii.sm,
-  background: vars.colors.surface.bg,
-  color: vars.colors.text.default,
-});
-
 export const errorBanner = style({
-  font: vars.typography.body,
-  color: vars.colors.text.onDanger,
-  background: vars.colors.intent.danger,
-  padding: vars.spacing['12'],
+  padding: `${vars.spacing['12']} ${vars.spacing['16']}`,
   borderRadius: vars.radii.sm,
+  background: vars.colors.intent.dangerBg,
+  color: vars.colors.intent.danger,
+  border: `1px solid ${vars.colors.intent.danger}`,
+  font: vars.typography.monoSm,
 });
 
 export const muted = style({
   color: vars.colors.text.subtle,
-  font: vars.typography.body,
+  font: vars.typography.mono,
 });
 
 export const cardActions = style({

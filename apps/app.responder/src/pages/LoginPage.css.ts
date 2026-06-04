@@ -19,23 +19,19 @@ export const shell = style({
   color: vars.colors.text.default,
 });
 
-export const heading = style({
-  font: vars.typography.heading.lg,
-  margin: 0,
-});
-
 export const subhead = style({
-  font: vars.typography.body,
-  color: vars.colors.text.subtle,
+  font: vars.typography.mono,
+  color: vars.colors.text.muted,
   margin: 0,
 });
 
 export const errorBanner = style({
-  padding: vars.spacing['12'],
+  padding: `${vars.spacing['12']} ${vars.spacing['16']}`,
   border: `1px solid ${vars.colors.intent.danger}`,
-  background: vars.colors.surface.bgElevated,
+  background: vars.colors.intent.dangerBg,
   borderRadius: vars.radii.md,
   color: vars.colors.intent.danger,
+  font: vars.typography.monoSm,
 });
 
 export const section = style({
@@ -44,41 +40,10 @@ export const section = style({
   gap: vars.spacing['12'],
 });
 
-export const sectionTitle = style({
-  font: vars.typography.heading.sm,
-  margin: 0,
-});
-
 export const form = style({
   display: 'flex',
   flexDirection: 'column',
   gap: vars.spacing['16'],
-});
-
-export const field = style({
-  display: 'flex',
-  flexDirection: 'column',
-  gap: vars.spacing['4'],
-});
-
-export const label = style({
-  font: vars.typography.body,
-  color: vars.colors.text.subtle,
-});
-
-export const input = style({
-  // 16px font-size avoids the iOS Safari zoom-on-focus that smaller inputs
-  // trigger — a small detail that makes the whole UI feel correct on phone.
-  fontSize: '16px',
-  padding: vars.spacing['12'],
-  border: `1px solid ${vars.colors.surface.border}`,
-  borderRadius: vars.radii.md,
-  background: vars.colors.surface.bgElevated,
-  color: vars.colors.text.default,
-  // Cover the full row so the tap target is the whole input area, not just
-  // the text.
-  width: '100%',
-  boxSizing: 'border-box',
 });
 
 export const grid = style({
@@ -102,8 +67,7 @@ export const cardName = style({
 });
 
 export const cardMeta = style({
-  font: vars.typography.mono,
-  fontSize: '12px',
+  font: vars.typography.monoSm,
   color: vars.colors.text.subtle,
 });
 
@@ -111,21 +75,10 @@ export const badges = style({
   display: 'flex',
   flexWrap: 'wrap',
   gap: vars.spacing['4'],
-});
-
-export const badge = style({
-  padding: `${vars.spacing['2']} ${vars.spacing['8']}`,
-  borderRadius: vars.radii.full,
-  background: vars.colors.surface.bg,
-  border: `1px solid ${vars.colors.surface.border}`,
-  font: vars.typography.mono,
-  fontSize: '11px',
-  textTransform: 'uppercase',
-  letterSpacing: '0.05em',
-  color: vars.colors.text.subtle,
+  alignItems: 'center',
 });
 
 export const muted = style({
-  color: vars.colors.text.subtle,
-  font: vars.typography.body,
+  color: vars.colors.text.muted,
+  font: vars.typography.mono,
 });
