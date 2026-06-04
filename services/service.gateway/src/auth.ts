@@ -44,6 +44,12 @@ export interface Operator {
   displayName: string;
   tier: ServiceTier;
   roles: readonly Role[];
+  /**
+   * Unit ids the operator crews — populated for `responder` operators only.
+   * Surfaced to the browser via `/api/auth/me` so the responder app can pick
+   * the right `unit:<id>` topic to subscribe to.
+   */
+  assignedUnitIds: readonly string[];
 }
 
 export interface Session {
@@ -104,6 +110,9 @@ function toOperator(proto: ProtoOperator): Operator | null {
     displayName: proto.displayName,
     tier,
     roles,
+    // proto's `repeated string` arrives as `string[]`; default to an empty
+    // array if an older auth-service binary doesn't set the field.
+    assignedUnitIds: proto.assignedUnitIds,
   };
 }
 
@@ -193,6 +202,8 @@ export function bypassFromUrl(query: Record<string, string | string[] | undefine
     displayName,
     tier,
     roles,
+    // Bypass sessions never crew a unit — leave the responder gate empty.
+    assignedUnitIds: [],
   };
   return {
     operator,

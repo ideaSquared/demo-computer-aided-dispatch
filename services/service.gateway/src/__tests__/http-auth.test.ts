@@ -77,6 +77,7 @@ describe('http/auth', () => {
             tier: AuthV1.ServiceTier.POLICE,
             roles: [AuthV1.Role.ADMIN],
             disabled: false,
+            assignedUnitIds: [],
           },
         };
       },
