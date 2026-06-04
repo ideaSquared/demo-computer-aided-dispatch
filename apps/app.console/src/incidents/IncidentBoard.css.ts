@@ -47,6 +47,33 @@ export const title = style({
   minWidth: 0,
 });
 
+// Inline row that pairs the title text with the MAJOR badge so the badge
+// sits next to the title without breaking the surrounding column layout
+// (which still stacks the AI suggestion chip below).
+export const titleRow = style({
+  display: 'flex',
+  alignItems: 'center',
+  gap: vars.spacing['8'],
+  minWidth: 0,
+});
+
+// Sticky "MAJOR" badge — red intent, uppercase, sits next to the incident
+// title once a commander has declared the incident major.
+export const majorBadge = style({
+  display: 'inline-flex',
+  alignItems: 'center',
+  padding: `${vars.spacing['2']} ${vars.spacing['8']}`,
+  borderRadius: vars.radii.sm,
+  background: vars.colors.intent.danger,
+  color: vars.colors.text.onDanger,
+  font: vars.typography.mono,
+  fontSize: '11px',
+  fontWeight: 700,
+  textTransform: 'uppercase',
+  letterSpacing: '0.08em',
+  flexShrink: 0,
+});
+
 // Wraps the AI chip below the incident title. Smaller line-height + no wrap
 // so the chip itself controls truncation.
 export const aiSuggestion = style({

@@ -1,12 +1,38 @@
 import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { Role, Session } from '../../auth/session.js';
 import { useFleet } from '../../fleet/useFleet.js';
 import type { Identity } from '../../presence/identity.js';
 import type { Incident, IncidentApi } from '../../services/incident.js';
 import type { Unit, UnitApi } from '../../services/units.js';
 import { IncidentBoard } from '../IncidentBoard.js';
 import { useIncidents } from '../useIncidents.js';
+
+// The board reads `session.operator.roles` via useAuth to decide whether
+// to surface the "declare major" button. Mock the auth module per-test so
+// we can flip between dispatcher / commander sessions without standing up
+// the real <AuthProvider> + localStorage + /me fetch fixture.
+let currentRoles: ReadonlyArray<Role> = ['dispatcher'];
+
+vi.mock('../../auth/AuthProvider.js', () => ({
+  useAuth: () => ({
+    session: {
+      operator: {
+        id: 'alex',
+        email: 'alex@cad.local',
+        displayName: 'Alex',
+        tier: 'fire',
+        roles: currentRoles,
+      },
+    } as Session,
+    hydrating: false,
+    error: null,
+    login: vi.fn(),
+    logout: vi.fn(),
+    switchOperator: vi.fn(),
+  }),
+}));
 
 const identity: Identity = { operatorId: 'alex', displayName: 'Alex', tier: 'fire' };
 
@@ -40,6 +66,7 @@ function makeIncident(over: Partial<Incident> = {}): Incident {
     openedAt: '2026-06-02T10:00:00.000Z',
     updatedAt: '2026-06-02T10:00:00.000Z',
     version: 0,
+    major: false,
     aiSuggestion: null,
     ...over,
   };
@@ -55,6 +82,7 @@ function makeApi(over: Partial<IncidentApi> = {}): IncidentApi {
     arrival: vi.fn(async () => makeIncident()),
     resolve: vi.fn(async () => makeIncident()),
     cancel: vi.fn(async () => makeIncident()),
+    declareMajor: vi.fn(async () => makeIncident({ major: true })),
     // Default to a rejecting recommender so existing tests exercise the
     // alphabetical fallback path; nearest-first cases override per-test.
     recommendUnits: vi.fn(async () => {
@@ -90,7 +118,12 @@ function makeUnitApi(over: Partial<UnitApi> = {}): UnitApi {
 
 // No global vitest setup file in this app, so RTL's auto-cleanup isn't wired;
 // clean up explicitly so mounted boards don't bleed across cases.
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  // Default the mocked auth back to a dispatcher session so each test that
+  // overrides it doesn't leak state into the next.
+  currentRoles = ['dispatcher'];
+});
 
 describe('IncidentBoard', () => {
   it('lists open incidents from the client', async () => {
@@ -387,5 +420,62 @@ describe('IncidentBoard', () => {
         triagedBy: 'alex',
       }),
     );
+  });
+
+  it('renders the MAJOR badge when incident.major is true', async () => {
+    const api = makeApi({
+      list: vi.fn(async () => [makeIncident({ major: true })]),
+    });
+    render(<Board api={api} />);
+
+    expect(await screen.findByLabelText('major incident')).toBeInTheDocument();
+  });
+
+  it('does not render the MAJOR badge when incident.major is false', async () => {
+    const api = makeApi({
+      list: vi.fn(async () => [makeIncident({ major: false })]),
+    });
+    render(<Board api={api} />);
+
+    await screen.findByText('structure fire on 5th');
+    expect(screen.queryByLabelText('major incident')).not.toBeInTheDocument();
+  });
+
+  it('shows the "declare major" button for a commander on a non-major incident', async () => {
+    currentRoles = ['commander'];
+    const api = makeApi();
+    render(<Board api={api} />);
+
+    expect(await screen.findByRole('button', { name: /declare major/i })).toBeInTheDocument();
+  });
+
+  it('hides the "declare major" button for a dispatcher', async () => {
+    currentRoles = ['dispatcher'];
+    const api = makeApi();
+    render(<Board api={api} />);
+
+    await screen.findByText('structure fire on 5th');
+    expect(screen.queryByRole('button', { name: /declare major/i })).not.toBeInTheDocument();
+  });
+
+  it('hides the "declare major" button once the incident is already major', async () => {
+    currentRoles = ['commander'];
+    const api = makeApi({
+      list: vi.fn(async () => [makeIncident({ major: true })]),
+    });
+    render(<Board api={api} />);
+
+    await screen.findByLabelText('major incident');
+    expect(screen.queryByRole('button', { name: /declare major/i })).not.toBeInTheDocument();
+  });
+
+  it('calls declareMajor on the incident api when the button is clicked', async () => {
+    currentRoles = ['commander'];
+    const api = makeApi();
+    render(<Board api={api} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /declare major/i }));
+
+    await waitFor(() => expect(api.declareMajor).toHaveBeenCalledWith('i1', undefined));
   });
 });

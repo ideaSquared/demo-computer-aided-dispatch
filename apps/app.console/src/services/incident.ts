@@ -57,6 +57,13 @@ export const IncidentSchema = z.object({
   openedAt: z.string(),
   updatedAt: z.string(),
   version: z.number(),
+  // Sticky `major` flag. `.nullish()` keeps the schema tolerant of older
+  // gateway payloads that don't yet emit it; we coerce missing/null to
+  // `false` so every downstream caller can rely on a boolean.
+  major: z
+    .boolean()
+    .nullish()
+    .transform((v) => v ?? false),
   // `.nullish()` lets the field be missing on older payloads from a service
   // that hasn't been redeployed yet; we coerce to `null` at the boundary so
   // every downstream caller can rely on the shape.
@@ -140,6 +147,11 @@ export interface CancelInput {
   readonly reason: string;
   readonly expectedVersion?: number;
   readonly cancelledBy?: string;
+}
+
+export interface DeclareMajorInput {
+  readonly expectedVersion?: number;
+  readonly declaredBy?: string;
 }
 
 export interface ListIncidentsParams {
@@ -238,6 +250,15 @@ export const incidentApi = {
   cancel: async (id: string, input: CancelInput): Promise<Incident> => {
     const { incident } = await post(
       `/api/incidents/${encodeURIComponent(id)}/cancel`,
+      input,
+      IncidentEnvelopeSchema,
+    );
+    return incident;
+  },
+
+  declareMajor: async (id: string, input: DeclareMajorInput = {}): Promise<Incident> => {
+    const { incident } = await post(
+      `/api/incidents/${encodeURIComponent(id)}/declare-major`,
       input,
       IncidentEnvelopeSchema,
     );

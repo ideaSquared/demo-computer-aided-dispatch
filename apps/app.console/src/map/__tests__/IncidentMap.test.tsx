@@ -24,6 +24,7 @@ function makeIncident(over: Partial<Incident> = {}): Incident {
     openedAt: '2026-06-02T10:00:00.000Z',
     updatedAt: '2026-06-02T10:00:00.000Z',
     version: 0,
+    major: false,
     aiSuggestion: null,
     ...over,
   };
@@ -39,6 +40,7 @@ function makeApi(over: Partial<IncidentApi> = {}): IncidentApi {
     arrival: vi.fn(async () => makeIncident()),
     resolve: vi.fn(async () => makeIncident()),
     cancel: vi.fn(async () => makeIncident()),
+    declareMajor: vi.fn(async () => makeIncident({ major: true })),
     recommendUnits: vi.fn(async () => []),
     ...over,
   };

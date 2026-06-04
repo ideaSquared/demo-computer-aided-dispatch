@@ -1,5 +1,7 @@
 import { Button, Stack } from '@cad/lib.ui';
 import { type FormEvent, useState } from 'react';
+import { useAuth } from '../auth/AuthProvider.js';
+import type { Role } from '../auth/session.js';
 import type { UseFleetResult } from '../fleet/useFleet.js';
 import type { Identity } from '../presence/identity.js';
 import type { Incident, IncidentApi, Severity, Tier } from '../services/incident.js';
@@ -9,6 +11,27 @@ import { AiSuggestionChip } from './AiSuggestionChip.js';
 import { bindIncidentActions, IncidentActions } from './IncidentActions.js';
 import * as styles from './IncidentBoard.css.js';
 import type { UseIncidentsResult } from './useIncidents.js';
+
+/** Non-terminal states the "Declare major" button is allowed to act from. */
+const NON_TERMINAL_STATES: ReadonlySet<Incident['state']> = new Set([
+  'open',
+  'triaged',
+  'dispatched',
+  'enRoute',
+  'onScene',
+]);
+
+/**
+ * Roles permitted to declare a major incident. The console doesn't carry
+ * CASL on the client; a coarse role check shapes the surface (the gateway
+ * still re-checks the ability authoritatively, so a hidden button is
+ * polish, not security).
+ */
+const MAJOR_ROLES: ReadonlySet<Role> = new Set(['commander', 'admin']);
+
+function canDeclareMajor(roles: ReadonlyArray<Role>): boolean {
+  return roles.some((r) => MAJOR_ROLES.has(r));
+}
 
 const TIER_OPTIONS: ReadonlyArray<Tier> = TIERS;
 
@@ -34,6 +57,12 @@ export function IncidentBoard({
 }: IncidentBoardProps) {
   const { incidents, loading, error, create } = source;
   const { units } = fleet;
+  // Role is sourced from the auth session — the brief calls out the coarse
+  // role check explicitly. `session` is guaranteed non-null here: the
+  // <Gate /> in App.tsx only mounts the shell when a session is present.
+  const { session } = useAuth();
+  const roles: ReadonlyArray<Role> = session?.operator.roles ?? [];
+  const showDeclareMajor = canDeclareMajor(roles);
 
   return (
     <Stack gap="24">
@@ -68,6 +97,9 @@ export function IncidentBoard({
                 incident={incident}
                 units={units}
                 incidentApi={incidentApi}
+                onDeclareMajor={
+                  showDeclareMajor ? () => void source.declareMajor(incident.id) : undefined
+                }
                 {...bindIncidentActions(source, incident, identity.operatorId)}
               />
             ))
@@ -144,6 +176,7 @@ function IncidentRow({
   onArrival,
   onResolve,
   onCancel,
+  onDeclareMajor,
   incidentApi,
 }: {
   incident: Incident;
@@ -153,6 +186,12 @@ function IncidentRow({
   onArrival: (unitId: string) => void;
   onResolve: () => void;
   onCancel: (reason: string) => void;
+  /**
+   * Optional handler — present only for roles allowed to declare major
+   * (commander / admin) AND when the button should be shown (non-terminal +
+   * not yet major). The button hides when `undefined`.
+   */
+  onDeclareMajor?: (() => void) | undefined;
   incidentApi?: IncidentApi | undefined;
 }) {
   // The "Apply" button on the chip pre-fills the operator's triage
@@ -160,10 +199,19 @@ function IncidentRow({
   // operator can still triage; for everything else the chip stays
   // informational.
   const canApply = incident.state === 'open';
+  const showDeclareMajor =
+    onDeclareMajor !== undefined && !incident.major && NON_TERMINAL_STATES.has(incident.state);
   return (
     <div className={styles.row}>
       <div className={styles.title}>
-        <div>{incident.title}</div>
+        <div className={styles.titleRow}>
+          <span>{incident.title}</span>
+          {incident.major ? (
+            <span className={styles.majorBadge} role="status" aria-label="major incident">
+              major
+            </span>
+          ) : null}
+        </div>
         {incident.aiSuggestion ? (
           <div className={styles.aiSuggestion}>
             <AiSuggestionChip
@@ -188,6 +236,11 @@ function IncidentRow({
       </div>
       <div className={styles.meta}>{incident.version}</div>
       <div className={styles.actions}>
+        {showDeclareMajor ? (
+          <Button intent="danger" size="sm" onClick={onDeclareMajor}>
+            declare major
+          </Button>
+        ) : null}
         <IncidentActions
           incident={incident}
           units={units}
