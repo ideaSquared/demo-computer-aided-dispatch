@@ -1,5 +1,5 @@
 import { createDbClient } from '@cad/db';
-import { connect } from '@cad/events';
+import { connect, ensureStream, STREAMS } from '@cad/events';
 import Fastify from 'fastify';
 import { config } from './config.js';
 import { migrate } from './db/migrate.js';
@@ -36,19 +36,24 @@ const grpcServer = await startGrpcServer({ port: config.GRPC_PORT, handlers, log
 
 // 4. The unit-movement→incident-lifecycle loop: react to unit.statusChanged by
 //    advancing the incident an assigned unit is working (enRoute → enRoute,
-//    onScene → onScene). Long-running NATS subscription; keep its promise
-//    reachable for shutdown and attach a .catch so a crash is logged.
+//    onScene → onScene). Still on the legacy fire-and-forget `subscribe`
+//    helper — migration to a durable JetStream consumer is the follow-up PR.
 const unitLoop = subscribeUnits({ db, nats, log: app.log });
 void unitLoop.catch((err) => {
   app.log.error({ err }, 'unit→incident subscriber crashed');
 });
 
-// 4b. The AI-suggestion loop: consume triage.classified, upsert the chip's
-//     read-model row, and republish incident.aiSuggestionUpdated for WS fanout.
-const triageLoop = subscribeTriageClassified({ db, nats, log: app.log });
-void triageLoop.catch((err) => {
-  app.log.error({ err }, 'triage.classified subscriber crashed');
-});
+// 4b. Ensure the triage JetStream exists BEFORE we attach a durable consumer.
+//     `ensureStream` is idempotent — whichever service boots first creates
+//     the stream; others reconcile config drift and move on.
+await ensureStream(nats, STREAMS.triage);
+app.log.info({ stream: STREAMS.triage.name }, 'jetstream ready');
+
+// 4c. The AI-suggestion durable consumer: consume triage.classified, upsert the
+//     chip's read-model row, and republish incident.aiSuggestionUpdated for
+//     WS fanout. Replay-on-reconnect — a restart picks up missed events.
+const triageSub = await subscribeTriageClassified({ db, nats, log: app.log });
+app.log.info({ durable: 'incident-triage-classified' }, 'durable consumer subscribed');
 
 // 5. Fastify carries an HTTP /health probe so docker-compose / smoke tests
 //    can verify the process is up. The gRPC server has its own
@@ -67,6 +72,9 @@ async function shutdown(signal: string): Promise<void> {
     grpcServer.tryShutdown(() => {
       /* logged via tryShutdown's own observability if needed */
     });
+    // Stop the durable consumer before draining NATS. The durable record
+    // stays on the server — that's how a restart catches up on missed events.
+    await triageSub.stop();
     await nats.drain();
     await db.end({ timeout: 5 });
   } finally {

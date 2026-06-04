@@ -1,5 +1,5 @@
 import { createDbClient } from '@cad/db';
-import { connect } from '@cad/events';
+import { connect, ensureStream, STREAMS } from '@cad/events';
 import Fastify from 'fastify';
 import { config } from './config.js';
 import { migrate } from './db/migrate.js';
@@ -32,16 +32,20 @@ app.log.info({ database: config.DATABASE_URL, nats: config.NATS_URL }, 'connecte
 const handlers = createHandlers({ db });
 const grpcServer = await startGrpcServer({ port: config.GRPC_PORT, handlers, log: app.log });
 
-// 4. The audit-actionTaken consumer loop. Long-running NATS subscription;
-//    keep its promise reachable for shutdown and attach a .catch — though
-//    the handler swallows per-message errors (skip-on-skew), the bus
-//    itself can still surface a connection-level failure.
-const auditLoop = subscribeAuditActionTaken({ db, nats, log: app.log });
-void auditLoop.catch((err) => {
-  app.log.error({ err }, 'audit-actionTaken subscriber crashed');
-});
+// 4. Ensure the audit JetStream exists BEFORE we attach a durable consumer.
+//    `ensureStream` is idempotent — whichever service boots first creates
+//    the stream; others reconcile config drift and move on.
+await ensureStream(nats, STREAMS.audit);
+app.log.info({ stream: STREAMS.audit.name }, 'jetstream ready');
 
-// 5. Fastify carries an HTTP /health probe so docker-compose / smoke tests
+// 5. The audit-actionTaken durable consumer. Replay-on-reconnect: a service
+//    that's been down catches up on every missed event when it restarts.
+//    `subscribeDurable` rejects on bind/create failure (e.g. stream missing
+//    despite the ensureStream above — should never happen, but crash loud).
+const auditSub = await subscribeAuditActionTaken({ db, nats, log: app.log });
+app.log.info({ durable: 'audit-action-taken' }, 'durable consumer subscribed');
+
+// 6. Fastify carries an HTTP /health probe so docker-compose / smoke tests
 //    can verify the process is up. The gRPC server has its own Health RPC
 //    for grpcurl-style probes.
 app.get('/health', async () => ({ status: 'ok', service: 'service.audit' }));
@@ -57,6 +61,9 @@ async function shutdown(signal: string): Promise<void> {
     grpcServer.tryShutdown(() => {
       /* logged via tryShutdown's own observability if needed */
     });
+    // Stop the durable consumer before draining NATS. The durable record
+    // stays on the server — that's how a restart catches up on missed events.
+    await auditSub.stop();
     await nats.drain();
     await db.end({ timeout: 5 });
   } finally {

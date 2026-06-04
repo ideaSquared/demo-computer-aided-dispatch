@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { DbClient } from '@cad/db';
-import type { NatsConnection } from '@cad/events';
-import { publish, subjects, subscribe } from '@cad/events';
+import type { DurableSubscription, NatsConnection } from '@cad/events';
+import { publish, STREAMS, subjects, subscribeDurable } from '@cad/events';
 import { IncidentAiSuggestionUpdatedSchema } from '@cad/events/incident';
 import { TriageClassifiedSchema } from '@cad/events/triage';
 import { withSpan } from '@cad/observability';
@@ -38,85 +38,93 @@ function asTier(tier: string): 'police' | 'medical' | 'fire' | null {
  *   - One message must never break the drain: per-message work is wrapped so
  *     a thrown error is logged, not rethrown out of the subscribe handler.
  */
-export function subscribeTriageClassified(ctx: Ctx): Promise<void> {
+export function subscribeTriageClassified(ctx: Ctx): Promise<DurableSubscription> {
   const newId = ctx.newId ?? (() => randomUUID());
   const now = ctx.now ?? (() => new Date().toISOString());
 
-  return subscribe({ nats: ctx.nats }, subjects.TriageClassified, TriageClassifiedSchema, (event) =>
-    withSpan('incident.onTriageClassified', async (span) => {
-      span.setAttribute('incident.id', event.incidentId);
-      span.setAttribute('triage.severity', event.severity);
-      span.setAttribute('triage.modelVersion', event.modelVersion);
+  return subscribeDurable({
+    nats: ctx.nats,
+    stream: STREAMS.triage.name,
+    filterSubject: subjects.TriageClassified,
+    durableName: 'incident-triage-classified',
+    schema: TriageClassifiedSchema,
+    log: ctx.log,
+    handler: (event) =>
+      withSpan('incident.onTriageClassified', async (span) => {
+        span.setAttribute('incident.id', event.incidentId);
+        span.setAttribute('triage.severity', event.severity);
+        span.setAttribute('triage.modelVersion', event.modelVersion);
 
-      if (event.severity === 'unspecified') {
-        // Classifier produced no hint. The chip should not render — skip
-        // without writing so the read-model stays empty for this incident.
-        ctx.log.info({ incidentId: event.incidentId }, 'skip triage suggestion: unspecified');
-        return;
-      }
-
-      try {
-        const result = await upsertAiSuggestion(ctx.db, {
-          incidentId: event.incidentId,
-          severity: event.severity,
-          confidence: event.confidence,
-          rationale: event.rationale,
-          modelVersion: event.modelVersion,
-        });
-        if (result === null) {
-          ctx.log.info(
-            { incidentId: event.incidentId },
-            'skip triage suggestion: unknown incident',
-          );
+        if (event.severity === 'unspecified') {
+          // Classifier produced no hint. The chip should not render — skip
+          // without writing so the read-model stays empty for this incident.
+          ctx.log.info({ incidentId: event.incidentId }, 'skip triage suggestion: unspecified');
           return;
         }
 
-        const tier = asTier(result.tier);
-        if (tier === null) {
-          // Defensive — incident_view.tier is constrained at write time, but
-          // a future schema change shouldn't sneak past Zod here.
-          ctx.log.error(
-            { incidentId: event.incidentId, tier: result.tier },
-            'skip fanout: unknown tier on incident_view',
-          );
-          return;
-        }
-
-        await publish(
-          ctx,
-          subjects.IncidentAiSuggestionUpdated,
-          IncidentAiSuggestionUpdatedSchema,
-          {
-            eventId: newId(),
-            occurredAt: now(),
-            // Stable per (incident, modelVersion) so a redelivery of the same
-            // classification publishes the same fanout key — keeps the WS
-            // spine deduplicable downstream.
-            idempotencyKey: `incident:${event.incidentId}:aiSuggestion:${event.modelVersion}`,
+        try {
+          const result = await upsertAiSuggestion(ctx.db, {
             incidentId: event.incidentId,
-            tier,
             severity: event.severity,
             confidence: event.confidence,
             rationale: event.rationale,
             modelVersion: event.modelVersion,
-          },
-        );
-        ctx.log.info(
-          {
-            incidentId: event.incidentId,
-            severity: event.severity,
-            modelVersion: event.modelVersion,
-          },
-          'upserted ai_triage_suggestion + republished',
-        );
-      } catch (err) {
-        // A single message's failure must never break the drain. Log + carry
-        // on; replays will retry.
-        ctx.log.error(
-          { incidentId: event.incidentId, err: String(err) },
-          'triage classified handler failed',
-        );
-      }
-    }),
-  );
+          });
+          if (result === null) {
+            ctx.log.info(
+              { incidentId: event.incidentId },
+              'skip triage suggestion: unknown incident',
+            );
+            return;
+          }
+
+          const tier = asTier(result.tier);
+          if (tier === null) {
+            // Defensive — incident_view.tier is constrained at write time, but
+            // a future schema change shouldn't sneak past Zod here.
+            ctx.log.error(
+              { incidentId: event.incidentId, tier: result.tier },
+              'skip fanout: unknown tier on incident_view',
+            );
+            return;
+          }
+
+          await publish(
+            ctx,
+            subjects.IncidentAiSuggestionUpdated,
+            IncidentAiSuggestionUpdatedSchema,
+            {
+              eventId: newId(),
+              occurredAt: now(),
+              // Stable per (incident, modelVersion) so a redelivery of the same
+              // classification publishes the same fanout key — keeps the WS
+              // spine deduplicable downstream.
+              idempotencyKey: `incident:${event.incidentId}:aiSuggestion:${event.modelVersion}`,
+              incidentId: event.incidentId,
+              tier,
+              severity: event.severity,
+              confidence: event.confidence,
+              rationale: event.rationale,
+              modelVersion: event.modelVersion,
+            },
+          );
+          ctx.log.info(
+            {
+              incidentId: event.incidentId,
+              severity: event.severity,
+              modelVersion: event.modelVersion,
+            },
+            'upserted ai_triage_suggestion + republished',
+          );
+        } catch (err) {
+          // A single message's failure must never break the drain. Log + carry
+          // on; the durable consumer will NOT redeliver because we swallow the
+          // throw — this is the right policy for tail loops (skip-on-skew).
+          ctx.log.error(
+            { incidentId: event.incidentId, err: String(err) },
+            'triage classified handler failed',
+          );
+        }
+      }),
+  });
 }
