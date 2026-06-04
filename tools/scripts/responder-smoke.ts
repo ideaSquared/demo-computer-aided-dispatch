@@ -17,6 +17,11 @@
  *
  *   pnpm smoke:responder        (defaults: localhost:5000 / :5010)
  *
+ * Auth transport: HttpOnly cookies + CSRF double-submit (per the
+ * cookie-migration PR). The smoke keeps a manual cookie jar — Node's
+ * fetch has none — parses Set-Cookie off each response, and sends the
+ * jar + x-csrf-token header on subsequent requests.
+ *
  * Dependency-light: Node's global `fetch` only, no `@cad/*` imports.
  * Exit 0 on success, 1 on any assertion failure.
  */
@@ -35,6 +40,8 @@ const EMAIL = process.env.SMOKE_RESPONDER_EMAIL ?? 'rsp.fire@cad.local';
 const PASSWORD = process.env.SMOKE_RESPONDER_PASSWORD ?? 'dev';
 const TIER = process.env.SMOKE_RESPONDER_TIER ?? 'fire';
 
+const COOKIE_CSRF = 'cad_csrf';
+
 interface OperatorView {
   id: string;
   email: string;
@@ -45,7 +52,8 @@ interface OperatorView {
 }
 
 interface LoginView {
-  accessToken: string;
+  sessionId: string;
+  csrfToken: string;
   operator: OperatorView;
 }
 
@@ -57,22 +65,56 @@ interface ErrorBody {
   error?: { code?: string; message?: string };
 }
 
+type CookieJar = Map<string, string>;
+
+function parseSetCookies(res: Response, jar: CookieJar): void {
+  const raw = res.headers.getSetCookie();
+  for (const line of raw) {
+    const eq = line.indexOf('=');
+    if (eq <= 0) continue;
+    const name = line.slice(0, eq).trim();
+    const semi = line.indexOf(';', eq);
+    const value = (semi === -1 ? line.slice(eq + 1) : line.slice(eq + 1, semi)).trim();
+    if (value === '') {
+      jar.delete(name);
+    } else {
+      jar.set(name, value);
+    }
+  }
+}
+
+function cookieHeader(jar: CookieJar): string {
+  return Array.from(jar.entries())
+    .map(([k, v]) => `${k}=${v}`)
+    .join('; ');
+}
+
+interface ReqOpts {
+  body?: unknown;
+  jar?: CookieJar;
+  sendCsrf?: boolean;
+}
+
 async function req<T>(
   base: string,
   method: string,
   path: string,
-  body?: unknown,
-  bearer?: string,
+  opts: ReqOpts = {},
 ): Promise<{ status: number; json: T }> {
   const headers: Record<string, string> = {};
-  if (body !== undefined) headers['content-type'] = 'application/json';
-  if (bearer) headers.authorization = `Bearer ${bearer}`;
+  if (opts.body !== undefined) headers['content-type'] = 'application/json';
+  if (opts.jar && opts.jar.size > 0) headers.cookie = cookieHeader(opts.jar);
+  if (opts.sendCsrf && opts.jar) {
+    const csrf = opts.jar.get(COOKIE_CSRF);
+    if (csrf) headers['x-csrf-token'] = csrf;
+  }
   const init: RequestInit = {
     method,
     headers,
-    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+    ...(opts.body !== undefined ? { body: JSON.stringify(opts.body) } : {}),
   };
   const res = await fetch(`${base}${path}`, init);
+  if (opts.jar) parseSetCookies(res, opts.jar);
   const text = await res.text();
   const json = text ? (JSON.parse(text) as T) : (undefined as T);
   return { status: res.status, json };
@@ -86,14 +128,16 @@ function fail(msg: string): never {
 async function main(): Promise<void> {
   console.log(`[responder-smoke] gateway=${GATEWAY} auth=${AUTH} email=${EMAIL}`);
 
-  // 1. Register a fresh unit on the gateway. The dispatch-loop smoke /
-  //    pnpm seed register their own — we don't share a pool, we mint
-  //    one here so this smoke is independent.
+  // 1. Register a fresh unit on the gateway. No cookies — the
+  //    DEV_AUTH_BYPASS path on the gateway synthesises a permissive
+  //    session, and the CSRF gate skips dev-bypass sessions (csrfHash='').
   const register = await req<UnitEnvelope & ErrorBody>(GATEWAY, 'POST', '/api/units', {
-    callsign: `Responder Smoke ${Date.now()}`,
-    tier: TIER,
-    location: { lat: 51.5074, lng: -0.1278 },
-    registeredBy: 'responder-smoke',
+    body: {
+      callsign: `Responder Smoke ${Date.now()}`,
+      tier: TIER,
+      location: { lat: 51.5074, lng: -0.1278 },
+      registeredBy: 'responder-smoke',
+    },
   });
   if (register.status !== 201) {
     fail(`register unit: expected 201, got ${register.status} (${JSON.stringify(register.json)})`);
@@ -101,30 +145,34 @@ async function main(): Promise<void> {
   const unitId = register.json.unit.id;
   console.log(`[responder-smoke] registered unit ${unitId} (${register.json.unit.callsign})`);
 
-  // 2. Bind the responder operator to that unit via the dev HTTP. This is
-  //    what `pnpm seed`'s assignment step does in production.
+  // 2. Bind the responder operator to that unit via service.auth's dev
+  //    HTTP. This is the auth service directly — not the gateway — so
+  //    cookies + CSRF don't apply.
   const assign = await req<{ operator: OperatorView } & ErrorBody>(
     AUTH,
     'POST',
     `/dev/operators/${encodeURIComponent(EMAIL)}/assignments`,
-    { unitIds: [unitId] },
+    { body: { unitIds: [unitId] } },
   );
   if (assign.status !== 200) {
     fail(`assign unit: expected 200, got ${assign.status} (${JSON.stringify(assign.json)})`);
   }
   console.log(`[responder-smoke] bound ${EMAIL} → ${unitId}`);
 
-  // 3. Login as the responder via the gateway's browser-facing proxy.
-  //    Asserts the propagation through the gRPC AuthService → gateway →
-  //    JSON wire path.
+  // 3. Login via the gateway's browser-facing proxy. The access/refresh
+  //    tokens land in HttpOnly cookies; csrfToken + operator echo in
+  //    the body.
+  const jar: CookieJar = new Map();
   const login = await req<LoginView & ErrorBody>(GATEWAY, 'POST', '/api/auth/login', {
-    email: EMAIL,
-    password: PASSWORD,
+    body: { email: EMAIL, password: PASSWORD },
+    jar,
   });
   if (login.status !== 200) {
     fail(`login: expected 200, got ${login.status} (${JSON.stringify(login.json)})`);
   }
-  if (!login.json.accessToken) fail('login: no accessToken');
+  if (!login.json.sessionId || !login.json.csrfToken) {
+    fail('login: missing sessionId or csrfToken in response body');
+  }
   if (!login.json.operator.roles.includes('responder')) {
     fail(
       `login: operator has roles=${JSON.stringify(login.json.operator.roles)}, expected responder`,
@@ -139,16 +187,10 @@ async function main(): Promise<void> {
   }
   console.log(`[responder-smoke] login ok — assignedUnitIds=${JSON.stringify(fromLogin)}`);
 
-  // 4. /me carries the same set. The headline assertion from the brief:
-  //    "log in as responder.fire@cad.local, hit /api/auth/me, confirm
-  //    assignedUnitIds is non-empty".
-  const me = await req<{ operator: OperatorView } & ErrorBody>(
-    GATEWAY,
-    'GET',
-    '/api/auth/me',
-    undefined,
-    login.json.accessToken,
-  );
+  // 4. /me carries the same set, validated via the access cookie.
+  const me = await req<{ operator: OperatorView } & ErrorBody>(GATEWAY, 'GET', '/api/auth/me', {
+    jar,
+  });
   if (me.status !== 200) {
     fail(`/me: expected 200, got ${me.status} (${JSON.stringify(me.json)})`);
   }
@@ -168,8 +210,7 @@ async function main(): Promise<void> {
     GATEWAY,
     'GET',
     `/api/units/${encodeURIComponent(unitId)}`,
-    undefined,
-    login.json.accessToken,
+    { jar },
   );
   if (got.status !== 200) {
     fail(`GET /api/units/${unitId}: expected 200, got ${got.status} (${JSON.stringify(got.json)})`);
