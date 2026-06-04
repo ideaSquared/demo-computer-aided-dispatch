@@ -3,15 +3,51 @@ import { style } from '@vanilla-extract/css';
 import { recipe } from '@vanilla-extract/recipes';
 
 /**
- * Phone-first action buttons for the unit status surface. The action
- * buttons are oversized on purpose: a thumb at arm's length on pavement in
- * the rain needs the full row to be tappable, not a small label inside it.
+ * Landscape MDT layout. A fixed-width status rail (callsign + the oversized
+ * status buttons) sits beside a fluid right column that stacks the map over
+ * the incident detail. Below the tablet breakpoint the grid collapses to one
+ * column so the app still works held in one hand.
+ *
+ * The action buttons stay oversized on purpose: a glove at arm's length on
+ * pavement in the rain needs the full row to be tappable, not a small label.
  */
 
-export const cardInner = style({
+export const mdt = style({
+  display: 'grid',
+  gridTemplateColumns: '1fr',
+  gap: vars.spacing['16'],
+  '@media': {
+    '(min-width: 768px)': {
+      gridTemplateColumns: 'minmax(280px, 340px) 1fr',
+      alignItems: 'start',
+    },
+  },
+});
+
+export const statusRail = style({
   display: 'flex',
   flexDirection: 'column',
   gap: vars.spacing['12'],
+});
+
+export const rightColumn = style({
+  display: 'flex',
+  flexDirection: 'column',
+  gap: vars.spacing['16'],
+  minWidth: 0,
+});
+
+/**
+ * The map's grid cell. Gives the map a tall, fixed frame so it dominates the
+ * right column — the MDT is map-forward. `UnitMap` fills 100% of this.
+ */
+export const mapCell = style({
+  height: '360px',
+  '@media': {
+    '(min-width: 768px)': {
+      height: '420px',
+    },
+  },
 });
 
 export const metaRow = style({

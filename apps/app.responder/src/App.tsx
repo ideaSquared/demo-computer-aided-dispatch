@@ -1,9 +1,8 @@
 import { Badge, Button, Heading, Stack, StatusDot } from '@cad/lib.ui';
-import { type ReactNode, useState } from 'react';
+import type { ReactNode } from 'react';
 import * as styles from './App.css.js';
 import { AuthProvider, useAuth } from './auth/AuthProvider.js';
 import { type Session, wsUrlFor } from './auth/session.js';
-import { IncidentDetailPage } from './pages/IncidentDetailPage.js';
 import { LoginPage } from './pages/LoginPage.js';
 import { MyUnitPage } from './pages/MyUnitPage.js';
 import { useWs } from './ws/useWs.js';
@@ -34,13 +33,10 @@ function Gate(): ReactNode {
   return <Shell session={session} />;
 }
 
-type Page = { kind: 'my-unit' } | { kind: 'incident'; incidentId: string };
-
 function Shell({ session }: { session: Session }): ReactNode {
   const url = wsUrlFor();
   const { status, subscribe } = useWs({ url });
   const { logout, switchOperator } = useAuth();
-  const [page, setPage] = useState<Page>({ kind: 'my-unit' });
 
   return (
     <main className={styles.shell}>
@@ -63,19 +59,7 @@ function Shell({ session }: { session: Session }): ReactNode {
         </output>
       </header>
 
-      {page.kind === 'my-unit' ? (
-        <MyUnitPage
-          session={session}
-          subscribe={subscribe}
-          onOpenIncident={(incidentId) => setPage({ kind: 'incident', incidentId })}
-        />
-      ) : (
-        <IncidentDetailPage
-          incidentId={page.incidentId}
-          subscribe={subscribe}
-          onBack={() => setPage({ kind: 'my-unit' })}
-        />
-      )}
+      <MyUnitPage session={session} subscribe={subscribe} />
 
       <Stack gap="8">
         <Button

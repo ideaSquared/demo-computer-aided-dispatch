@@ -2,9 +2,12 @@ import { vars } from '@cad/lib.ui/styles/theme.css';
 import { style } from '@vanilla-extract/css';
 
 /**
- * Phone-first shell. One column, full viewport width, chunky paddings.
- * No sidebar — the responder app is held in one thumb at arm's length, so
- * touch targets stay above the 44px minimum and copy stays terse.
+ * MDT shell. Landscape, vehicle-mounted tablet — wide canvas, not a phone.
+ * The identity bar spans the top; the MDT grid (status rail + map + incident)
+ * fills the rest. A generous max-width keeps line lengths sane on a 13"+
+ * mount; below the tablet breakpoint the inner grid collapses to one column
+ * so it still works held in one hand. Touch targets stay above 44px and copy
+ * stays terse.
  */
 
 export const shell = style({
@@ -16,7 +19,7 @@ export const shell = style({
   display: 'flex',
   flexDirection: 'column',
   gap: vars.spacing['16'],
-  maxWidth: '480px',
+  maxWidth: '1280px',
   margin: '0 auto',
   // Reserve room for the iOS home indicator on devices that have it. The
   // env() falls back to 0 on platforms that don't expose it.
