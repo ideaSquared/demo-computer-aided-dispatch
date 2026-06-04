@@ -212,6 +212,28 @@ services:
         - { action: rebuild, path: ../packages }
         - { action: rebuild, path: ../pnpm-lock.yaml }
 
+  # Mobile responder app — Vite dev server on :3001 (the console owns
+  # :3000). Same proxy posture: /api + /ws + /health relative, target
+  # swapped by DOCKER_ENV.
+  app-responder:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.dev
+    restart: unless-stopped
+    command: pnpm --filter @cad/app.responder dev
+    ports: ["3001:3001"]
+    environment:
+      <<: *dev-env
+      DOCKER_ENV: "true"
+    depends_on:
+      - service-gateway
+    develop:
+      watch:
+        - { action: sync, path: ../apps/app.responder/src, target: /app/apps/app.responder/src }
+        - { action: rebuild, path: ../apps/app.responder/package.json }
+        - { action: rebuild, path: ../packages }
+        - { action: rebuild, path: ../pnpm-lock.yaml }
+
   # Python service — runs both FastAPI (PORT) and gRPC (GRPC_PORT) in one
   # process via `python -m triage`. We drop the prior uvicorn --reload flag
   # because gRPC + uvicorn-reload don't coexist cleanly (uvicorn's

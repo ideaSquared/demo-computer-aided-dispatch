@@ -26,6 +26,7 @@ on:
       - "tools/scripts/major-incident-smoke.ts"
       - "tools/scripts/triage-stub-smoke.ts"
       - "tools/scripts/triage-classify-smoke.ts"
+      - "tools/scripts/responder-smoke.ts"
       - ".dockerignore"
 
 concurrency:
@@ -136,6 +137,12 @@ jobs:
       # /me → refresh → logout → 401-after-revoke.
       - name: Dev-login smoke (gateway auth proxy)
         run: pnpm smoke:dev-login
+      # The responder app's auth contract: log in as a responder, hit
+      # /api/auth/me, confirm assignedUnitIds is non-empty and resolves
+      # to a real unit. Registers its own unit so it doesn't depend on
+      # `pnpm seed` having run.
+      - name: Responder smoke (assignedUnitIds → /me → unit)
+        run: pnpm smoke:responder
       # Phase 5 audit consumer: a call_handler is denied dispatch, the
       # gateway emits audit.actionTaken{denied}, service.audit appends it
       # to its event store, and admin reads it back via the gateway
@@ -280,6 +287,12 @@ jobs:
       # /me → refresh → logout → 401-after-revoke.
       - name: Dev-login smoke (gateway auth proxy)
         run: pnpm smoke:dev-login
+      # The responder app's auth contract: log in as a responder, hit
+      # /api/auth/me, confirm assignedUnitIds is non-empty and resolves
+      # to a real unit. Registers its own unit so it doesn't depend on
+      # `pnpm seed` having run.
+      - name: Responder smoke (assignedUnitIds → /me → unit)
+        run: pnpm smoke:responder
       # Phase 5 audit consumer: a call_handler is denied dispatch, the
       # gateway emits audit.actionTaken{denied}, service.audit appends it
       # to its event store, and admin reads it back via the gateway
