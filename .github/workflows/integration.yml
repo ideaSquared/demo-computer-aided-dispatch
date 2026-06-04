@@ -23,6 +23,7 @@ on:
       - "tools/scripts/auth-smoke.ts"
       - "tools/scripts/enforce-smoke.ts"
       - "tools/scripts/audit-smoke.ts"
+      - "tools/scripts/major-incident-smoke.ts"
       - "tools/scripts/triage-stub-smoke.ts"
       - "tools/scripts/triage-classify-smoke.ts"
       - ".dockerignore"
@@ -89,7 +90,7 @@ jobs:
       # `SMOKE_CHIP_DEADLINE_MS`.
       - name: Triage-classify smoke (incident.opened → triage → chip)
         run: pnpm smoke:triage-classify
-        timeout-minutes: 6
+        timeout-minutes: 8
       - name: gRPC smoke (incident)
         run: pnpm smoke:grpc
       # Incident event spine: NATS → notification → Redis → gateway → ws.
@@ -141,6 +142,10 @@ jobs:
       # query proxy.
       - name: Audit smoke (gateway → audit query)
         run: pnpm smoke:audit
+      # Major-incident vertical: commander declares major on an open
+      # incident, dispatcher gets 403, redeclaration is idempotent.
+      - name: Major-incident smoke (gateway → declareMajor)
+        run: pnpm smoke:major-incident
       # Phase 5 PR 3a: polyglot triage seam. Dispatcher logs in, posts to
       # /api/triage/classify, gateway proxies to the Python gRPC service,
       # the real Ollama-backed classifier responds. PR 3a's exact-shape
@@ -231,7 +236,7 @@ jobs:
       # `SMOKE_CHIP_DEADLINE_MS`.
       - name: Triage-classify smoke (incident.opened → triage → chip)
         run: pnpm smoke:triage-classify
-        timeout-minutes: 6
+        timeout-minutes: 8
       - name: gRPC smoke (incident)
         run: pnpm smoke:grpc
       # Incident event spine: NATS → notification → Redis → gateway → ws.
@@ -281,6 +286,10 @@ jobs:
       # query proxy.
       - name: Audit smoke (gateway → audit query)
         run: pnpm smoke:audit
+      # Major-incident vertical: commander declares major on an open
+      # incident, dispatcher gets 403, redeclaration is idempotent.
+      - name: Major-incident smoke (gateway → declareMajor)
+        run: pnpm smoke:major-incident
       # Phase 5 PR 3a: polyglot triage seam. Dispatcher logs in, posts to
       # /api/triage/classify, gateway proxies to the Python gRPC service,
       # the real Ollama-backed classifier responds. PR 3a's exact-shape

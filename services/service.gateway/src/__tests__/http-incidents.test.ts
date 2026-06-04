@@ -2,6 +2,7 @@ import type { NatsConnection } from '@cad/events';
 import { defineAbilitiesFor } from '@cad/lib.authz';
 import type { Incident, Operator as ProtoOperator } from '@cad/proto';
 import { AuthV1, IncidentV1 } from '@cad/proto';
+import * as grpc from '@grpc/grpc-js';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { describe, expect, it, vi } from 'vitest';
 import type { AuthClient } from '../clients/auth.js';
@@ -51,6 +52,7 @@ function baseIncident(over: Partial<Incident> = {}): Incident {
     openedAt: '2026-06-03T10:00:00.000Z',
     updatedAt: '2026-06-03T10:00:00.000Z',
     version: 1,
+    major: false,
     aiSuggestion: undefined,
     ...over,
   };
@@ -86,6 +88,7 @@ function makeApp(opts: MakeAppOpts = {}): FastifyInstance {
     recordUnitArrival: async () => ({ incident: baseIncident() }),
     resolve: async () => ({ incident: baseIncident() }),
     cancel: async () => ({ incident: baseIncident() }),
+    declareMajor: async () => ({ incident: baseIncident({ major: true }) }),
     get: async () => ({ incident: baseIncident() }),
     listOpen: async () => ({ incidents: [baseIncident()] }),
     close: () => {},
@@ -208,5 +211,90 @@ describe('GET /api/incidents/:id', () => {
     expect(body.incidents).toHaveLength(2);
     expect(body.incidents[0].aiSuggestion).toBeNull();
     expect(body.incidents[1].aiSuggestion.severity).toBe('medium');
+  });
+});
+
+describe('POST /api/incidents/:id/declare-major', () => {
+  const incidentId = '11111111-1111-1111-1111-111111111111';
+
+  function commanderAuth(): AuthClient {
+    return {
+      login: async () => {
+        throw new Error('login not stubbed');
+      },
+      refresh: async () => {
+        throw new Error('refresh not stubbed');
+      },
+      validateToken: async () => ({
+        operator: operator(AuthV1.ServiceTier.POLICE, [AuthV1.Role.COMMANDER]),
+        abilityJson: abilityJsonForRoles('police', ['commander']),
+        expiresAt: '2099-12-31T23:59:59Z',
+      }),
+      revokeSession: async () => ({}),
+      listSeededOperators: async () => ({ seededOperators: [] }),
+      close: () => {},
+    };
+  }
+
+  it('403 when the caller lacks declareMajor (dispatcher, the default stub)', async () => {
+    const app = makeApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/incidents/${incidentId}/declare-major`,
+      headers: { authorization: 'Bearer dev', 'content-type': 'application/json' },
+      payload: '{}',
+    });
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error.code).toBe('PERMISSION_DENIED');
+  });
+
+  it('200 + major=true when a commander declares major', async () => {
+    const declareMajor = vi.fn(async () => ({ incident: baseIncident({ major: true }) }));
+    const app = makeApp({ auth: commanderAuth(), incident: { declareMajor } });
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/incidents/${incidentId}/declare-major`,
+      headers: { authorization: 'Bearer dev', 'content-type': 'application/json' },
+      payload: '{}',
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().incident.major).toBe(true);
+    expect(declareMajor).toHaveBeenCalledTimes(1);
+  });
+
+  it('200 (idempotent) when a redeclaration returns major still true', async () => {
+    // The incident service is idempotent at the domain layer; the gateway
+    // happily passes the unchanged aggregate back to the caller.
+    const declareMajor = vi.fn(async () => ({
+      incident: baseIncident({ major: true, version: 7 }),
+    }));
+    const app = makeApp({ auth: commanderAuth(), incident: { declareMajor } });
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/incidents/${incidentId}/declare-major`,
+      headers: { authorization: 'Bearer dev', 'content-type': 'application/json' },
+      payload: '{}',
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().incident.major).toBe(true);
+  });
+
+  it('404 when the underlying incident service signals NOT_FOUND', async () => {
+    const declareMajor = vi.fn(async () => {
+      const err: grpc.ServiceError = Object.assign(new Error('not found'), {
+        code: grpc.status.NOT_FOUND,
+        details: 'not found',
+        metadata: new grpc.Metadata(),
+      });
+      throw err;
+    });
+    const app = makeApp({ auth: commanderAuth(), incident: { declareMajor } });
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/incidents/${incidentId}/declare-major`,
+      headers: { authorization: 'Bearer dev', 'content-type': 'application/json' },
+      payload: '{}',
+    });
+    expect(res.statusCode).toBe(404);
   });
 });

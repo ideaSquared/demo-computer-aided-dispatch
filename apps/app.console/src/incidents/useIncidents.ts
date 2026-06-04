@@ -4,6 +4,7 @@ import type {
   ArrivalInput,
   CancelInput,
   CreateIncidentInput,
+  DeclareMajorInput,
   DispatchInput,
   Incident,
   IncidentApi,
@@ -46,6 +47,7 @@ export interface UseIncidentsResult {
   readonly arrival: (id: string, input: ArrivalInput) => Promise<void>;
   readonly resolve: (id: string, input?: ResolveInput) => Promise<void>;
   readonly cancel: (id: string, input: CancelInput) => Promise<void>;
+  readonly declareMajor: (id: string, input?: DeclareMajorInput) => Promise<void>;
 }
 
 /**
@@ -148,6 +150,11 @@ export function useIncidents(opts: {
     (id: string, input: CancelInput) => runAction(() => apiRef.current.cancel(id, input)),
     [runAction],
   );
+  const declareMajor = useCallback(
+    (id: string, input?: DeclareMajorInput) =>
+      runAction(() => apiRef.current.declareMajor(id, input)),
+    [runAction],
+  );
 
   return {
     incidents,
@@ -160,5 +167,6 @@ export function useIncidents(opts: {
     arrival,
     resolve,
     cancel,
+    declareMajor,
   };
 }

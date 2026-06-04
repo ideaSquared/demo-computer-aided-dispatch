@@ -63,6 +63,7 @@ export function toProtoIncident(
     openedAt: state.openedAt,
     updatedAt: state.updatedAt,
     version,
+    major: state.major,
     aiSuggestion:
       ai && aiSeverity !== undefined
         ? {

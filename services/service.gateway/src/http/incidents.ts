@@ -106,6 +106,13 @@ interface IncidentJson {
   openedAt: string;
   updatedAt: string;
   version: number;
+  /**
+   * Sticky "major incident" flag. Defaults to `false` for payloads from an
+   * older incident service that hasn't redeployed (the proto field is
+   * optional on the wire). Once set true on an aggregate, every subsequent
+   * response carries `major: true`.
+   */
+  major: boolean;
   aiSuggestion: AiSuggestionJson | null;
 }
 
@@ -147,6 +154,9 @@ function toJson(incident: Incident): IncidentJson {
     openedAt: incident.openedAt,
     updatedAt: incident.updatedAt,
     version: Number(incident.version),
+    // `?? false` keeps the wire shape stable when an older incident service
+    // omits the proto field entirely.
+    major: incident.major ?? false,
     aiSuggestion,
   };
 }
@@ -188,6 +198,11 @@ const CancelBodySchema = z.object({
   reason: z.string().min(1),
   expectedVersion: z.number().int().optional(),
   cancelledBy: z.string().min(1).optional(),
+});
+
+const DeclareMajorBodySchema = z.object({
+  expectedVersion: z.number().int().optional(),
+  declaredBy: z.string().min(1).optional(),
 });
 
 const IdParamsSchema = z.object({ id: z.string().min(1) });
@@ -498,6 +513,48 @@ export function registerIncidentRoutes(
         { kind: 'Incident', id: params.data.id },
         'success',
         { reason: body.data.reason },
+      ).catch(() => {
+        /* best-effort */
+      });
+      return reply.send({ incident: toJson(res.incident) });
+    } catch (err) {
+      return replyError(reply, err);
+    }
+  });
+
+  /**
+   * Major-incident declaration. Cross-tier action — gated on the commander
+   * role's `declareMajor Incident` ability, which is granted unscoped, so
+   * we hand `requireAbility` a bare-type subject (no tier instance). The
+   * incident service is idempotent at the domain layer; the gateway
+   * audits *every* successful call so the trail captures repeated tries
+   * even though only the first lands as a domain event.
+   */
+  app.post('/api/incidents/:id/declare-major', async (req, reply) => {
+    const params = IdParamsSchema.safeParse(req.params);
+    if (!params.success) return replyValidation(reply, params.error);
+    const body = DeclareMajorBodySchema.safeParse(req.body ?? {});
+    if (!body.success) return replyValidation(reply, body.error);
+    const session = await requireAbility(req, reply, gate, 'declareMajor', { kind: 'Incident' });
+    if (!session) return reply;
+    try {
+      const res = await client.declareMajor(
+        {
+          id: params.data.id,
+          expectedVersion: body.data.expectedVersion ?? 0,
+          // Identity comes from the session — operator-supplied `declaredBy`
+          // would let the wire lie about authorship.
+          declaredBy: session.operator.id,
+        },
+        operatorMetadata(session),
+      );
+      if (!res.incident) throw new Error('incident service returned no incident');
+      await emitAudit(
+        gate,
+        session,
+        'declareMajor',
+        { kind: 'Incident', id: params.data.id },
+        'success',
       ).catch(() => {
         /* best-effort */
       });

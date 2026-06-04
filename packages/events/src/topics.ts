@@ -33,6 +33,7 @@ export function topicsFor(subject: string, payload: unknown): string[] {
     case subjects.IncidentUnitArrived:
     case subjects.IncidentResolved:
     case subjects.IncidentCancelled:
+    case subjects.IncidentMajorDeclared:
     case subjects.IncidentAiSuggestionUpdated: {
       const p = payload as { incidentId?: unknown };
       const incidentId = typeof p.incidentId === 'string' ? p.incidentId : undefined;

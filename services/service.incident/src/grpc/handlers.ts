@@ -6,6 +6,7 @@ import { publish, subjects } from '@cad/events';
 import {
   IncidentCancelledSchema,
   IncidentDispatchedSchema,
+  IncidentMajorDeclaredSchema,
   IncidentMarkedEnRouteSchema,
   IncidentOpenedSchema,
   IncidentResolvedSchema,
@@ -24,6 +25,7 @@ import {
 } from '../db/repository.js';
 import {
   cancel,
+  declareMajor,
   dispatch,
   fold,
   type IncidentEvent,
@@ -162,6 +164,12 @@ export function createHandlers(deps: Deps): IncidentV1.IncidentServiceServer {
             ...envelope,
             reason: event.reason,
             cancelledBy: event.cancelledBy,
+          });
+          break;
+        case 'IncidentMajorDeclared':
+          await publish(deps, subjects.IncidentMajorDeclared, IncidentMajorDeclaredSchema, {
+            ...envelope,
+            declaredBy: event.declaredBy,
           });
           break;
       }
@@ -369,6 +377,71 @@ export function createHandlers(deps: Deps): IncidentV1.IncidentServiceServer {
             (state) => {
               if (state) ensureAllowed(op, 'cancel', caslSubject('Incident', { tier: state.tier }));
             },
+          );
+          await publishAll(
+            call.request.id,
+            nextState.tier,
+            newVersion - newEvents.length + 1,
+            newEvents,
+          );
+          callback(null, { incident: toProtoIncident(call.request.id, nextState, newVersion) });
+        } catch (err) {
+          callback(mapError(err), null);
+        }
+      })();
+    },
+
+    declareMajor: (call, callback) => {
+      void (async () => {
+        try {
+          const op = readOperatorContext(call.metadata);
+          // `declareMajor` is the one command that's idempotent at the
+          // domain layer: a redeclaration on an already-major aggregate
+          // emits no event. `execute` enforces "every command produces at
+          // least one event" so we can't share its path — we run loadEvents
+          // → fold → command directly, then short-circuit when the no-op
+          // branch returns. The aggregate is returned as-is so the wire
+          // shape stays uniform and the caller sees `major: true` either
+          // way. Defence-in-depth: re-check `declareMajor` is allowed
+          // (cross-tier, so no tier instance — just the bare-type check).
+          const declaredBy = call.request.declaredBy || op?.id || 'unknown';
+          const { events: history, version: expectedVersion } = await loadEvents(
+            deps.db,
+            call.request.id,
+          );
+          const current = fold(history);
+          if (current === null) {
+            throw Object.assign(new Error(`incident '${call.request.id}' not found`), {
+              code: grpc.status.NOT_FOUND,
+            });
+          }
+          ensureAllowed(op, 'declareMajor', 'Incident');
+          const newEvents = declareMajor(current, { declaredBy, occurredAt: now() });
+          if (newEvents.length === 0) {
+            // Idempotent no-op: surface the current aggregate unchanged.
+            const row = await loadView(deps.db, call.request.id);
+            const view = row ?? {
+              id: call.request.id,
+              state: current,
+              version: expectedVersion,
+              ai_suggestion: null,
+            };
+            callback(null, {
+              incident: toProtoIncident(view.id, view.state, view.version, view.ai_suggestion),
+            });
+            return;
+          }
+          const nextState = fold([...history, ...newEvents]);
+          if (nextState === null) {
+            throw new Error('post-command state is null (impossible)');
+          }
+          const { newVersion } = await withTransaction(deps.db, (tx) =>
+            appendAndProject(tx, {
+              aggregateId: call.request.id,
+              expectedVersion,
+              newEvents,
+              nextState,
+            }),
           );
           await publishAll(
             call.request.id,

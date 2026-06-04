@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   apply,
   cancel,
+  declareMajor,
   dispatch,
   fold,
   type IncidentEvent,
@@ -308,5 +309,63 @@ describe('commands — invariant violations', () => {
     expect(cancel(opened, { reason: 'false alarm', cancelledBy: 'op-1', occurredAt: T2 })).toEqual([
       { type: 'IncidentCancelled', occurredAt: T2, reason: 'false alarm', cancelledBy: 'op-1' },
     ]);
+  });
+});
+
+describe('declareMajor — sticky major-incident flag', () => {
+  it('a freshly opened incident is not major', () => {
+    const state = fold(open(null, openInput));
+    expect(state?.major).toBe(false);
+  });
+
+  it('declareMajor emits IncidentMajorDeclared and flips state.major', () => {
+    const opened = fold(open(null, openInput));
+    const events = declareMajor(opened, { declaredBy: 'op-cmd', occurredAt: T1 });
+    expect(events).toEqual([
+      { type: 'IncidentMajorDeclared', occurredAt: T1, declaredBy: 'op-cmd' },
+    ]);
+    const major = fold([...open(null, openInput), ...events]);
+    expect(major?.major).toBe(true);
+    // Lifecycle status is untouched — major is orthogonal.
+    expect(major?.status).toBe('open');
+  });
+
+  it('redeclaration on an already-major incident is an idempotent no-op (no events)', () => {
+    const major = fold([
+      ...open(null, openInput),
+      { type: 'IncidentMajorDeclared', occurredAt: T1, declaredBy: 'op-cmd' },
+    ]);
+    expect(declareMajor(major, { declaredBy: 'op-cmd-2', occurredAt: T2 })).toEqual([]);
+  });
+
+  it('cannot declare major on an aggregate that does not exist', () => {
+    expect(() => declareMajor(null, { declaredBy: 'op-cmd', occurredAt: T1 })).toThrow(
+      /does not exist/,
+    );
+  });
+
+  it('requires a non-blank declaredBy', () => {
+    const opened = fold(open(null, openInput));
+    expect(() => declareMajor(opened, { declaredBy: '   ', occurredAt: T1 })).toThrow(
+      /declaredBy is required/,
+    );
+  });
+
+  it('major sticks through subsequent lifecycle transitions', () => {
+    const log: IncidentEvent[] = [
+      ...open(null, openInput),
+      { type: 'IncidentMajorDeclared', occurredAt: T1, declaredBy: 'op-cmd' },
+      { type: 'IncidentTriaged', occurredAt: T2, severity: 'critical', triagedBy: 'op-1' },
+      {
+        type: 'IncidentDispatched',
+        occurredAt: T3,
+        unitIds: ['unit-a'],
+        dispatchedBy: 'op-2',
+      },
+      { type: 'IncidentResolved', occurredAt: T4, resolvedBy: 'op-2' },
+    ];
+    const final = fold(log);
+    expect(final?.major).toBe(true);
+    expect(final?.status).toBe('resolved');
   });
 });
