@@ -11,6 +11,7 @@ export const subjects = {
   IncidentUnitArrived: 'incident.unitArrived',
   IncidentResolved: 'incident.resolved',
   IncidentCancelled: 'incident.cancelled',
+  IncidentMajorDeclared: 'incident.majorDeclared',
   IncidentAiSuggestionUpdated: 'incident.aiSuggestionUpdated',
   UnitRegistered: 'unit.registered',
   UnitStatusChanged: 'unit.statusChanged',

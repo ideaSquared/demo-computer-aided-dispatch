@@ -56,6 +56,20 @@ export const IncidentCancelledSchema = EnvelopeSchema.extend({
 export type IncidentCancelled = z.infer<typeof IncidentCancelledSchema>;
 
 /**
+ * Major-incident declaration — emitted by the incident service after the
+ * `IncidentMajorDeclared` domain event commits. Sticky: re-declarations on
+ * an already-major incident are dropped at the domain layer, so consumers
+ * see one event per aggregate-lifetime at most. The notification service
+ * fans it to the `incidents` + `incident:<id>` Redis topics for the
+ * console-side WS forwarder.
+ */
+export const IncidentMajorDeclaredSchema = EnvelopeSchema.extend({
+  ...baseIncident,
+  declaredBy: z.string().min(1),
+});
+export type IncidentMajorDeclared = z.infer<typeof IncidentMajorDeclaredSchema>;
+
+/**
  * Fanout-only metadata event: the incident service emits this after upserting
  * the `ai_triage_suggestions` row so the WS forwarder can push the chip to
  * subscribed consoles. NOT a lifecycle/domain event — the AI suggestion is

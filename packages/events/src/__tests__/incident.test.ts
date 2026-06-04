@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   IncidentCancelledSchema,
   IncidentDispatchedSchema,
+  IncidentMajorDeclaredSchema,
   IncidentMarkedEnRouteSchema,
   IncidentOpenedSchema,
   IncidentResolvedSchema,
@@ -108,5 +109,15 @@ describe('the rest of the incident.* schemas', () => {
         cancelledBy: 'op-1',
       }),
     ).not.toThrow();
+  });
+
+  it('accepts a major-declared event', () => {
+    expect(() =>
+      IncidentMajorDeclaredSchema.parse({ ...envelope, ...aggregate, declaredBy: 'op-cmd' }),
+    ).not.toThrow();
+  });
+
+  it('rejects a major-declared event with a missing declaredBy', () => {
+    expect(() => IncidentMajorDeclaredSchema.parse({ ...envelope, ...aggregate })).toThrow();
   });
 });

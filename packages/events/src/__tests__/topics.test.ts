@@ -26,6 +26,7 @@ describe('topicsFor', () => {
     subjects.IncidentUnitArrived,
     subjects.IncidentResolved,
     subjects.IncidentCancelled,
+    subjects.IncidentMajorDeclared,
   ])('maps %s to the incidents scope + an incident-scoped topic', (subject) => {
     expect(topicsFor(subject, { incidentId: 'inc-42' })).toEqual(['incidents', 'incident:inc-42']);
   });
