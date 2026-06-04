@@ -178,6 +178,7 @@ if (config.DEV_MODE) {
       operator: result.operator,
       abilityJson: result.abilityJson,
       sessionId: result.sessionId,
+      csrfToken: result.csrfToken,
     };
   });
 
@@ -199,6 +200,7 @@ if (config.DEV_MODE) {
       operator: result.operator,
       abilityJson: result.abilityJson,
       sessionId: result.sessionId,
+      csrfToken: result.csrfToken,
     };
   });
 
@@ -217,6 +219,8 @@ if (config.DEV_MODE) {
       operator: result.operator,
       abilityJson: result.abilityJson,
       expiresAt: result.expiresAt,
+      csrfHash: result.csrfHash,
+      sessionId: result.sessionId,
     };
   });
 

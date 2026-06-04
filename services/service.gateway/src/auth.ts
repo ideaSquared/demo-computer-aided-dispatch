@@ -55,6 +55,18 @@ export interface Session {
    * synthetic id derived from `?operator=` (or `dev-bypass-default`).
    */
   accessTokenId: string;
+  /**
+   * sha256 of the session's CSRF token, as returned by ValidateToken.
+   * The CSRF middleware compares `sha256(x-csrf-token header)` to this
+   * value. Empty string for dev-bypass sessions (CSRF gate skips when
+   * bypass is in play).
+   */
+  csrfHash: string;
+  /**
+   * The session row id from service.auth, plumbed through so CSRF /
+   * cookie rotation paths can target a specific session.
+   */
+  sessionId: string;
 }
 
 /**
@@ -109,7 +121,12 @@ export async function authenticate(
   accessToken: string,
 ): Promise<Session | null> {
   if (!accessToken) return null;
-  let response: { operator?: ProtoOperator | undefined; abilityJson: string };
+  let response: {
+    operator?: ProtoOperator | undefined;
+    abilityJson: string;
+    csrfHash: string;
+    sessionId: string;
+  };
   try {
     response = await authClient.validateToken({ accessToken });
   } catch {
@@ -127,11 +144,12 @@ export async function authenticate(
   return {
     operator,
     ability: createMongoAbility<AppAbility>(rules),
-    // The JWT's `jti` is keyed against the session row server-side, but
-    // ValidateTokenResponse doesn't surface session_id today; use the
-    // operator id as the stable audit handle. A later PR can plumb
-    // session_id through if/when audit needs it.
-    accessTokenId: operator.id,
+    // The JWT's `jti` is keyed against the session row server-side, and
+    // ValidateTokenResponse now surfaces `session_id` — use it directly
+    // so audit + CSRF rotation both target the same row.
+    accessTokenId: response.sessionId,
+    csrfHash: response.csrfHash,
+    sessionId: response.sessionId,
   };
 }
 
@@ -180,6 +198,10 @@ export function bypassFromUrl(query: Record<string, string | string[] | undefine
     operator,
     ability: defineAbilitiesFor({ tier, roles }),
     accessTokenId: `dev-bypass:${operatorId}`,
+    // Dev-bypass sessions have no CSRF binding — the middleware skips the
+    // check entirely when bypass is in play, so empty strings are fine.
+    csrfHash: '',
+    sessionId: `dev-bypass:${operatorId}`,
   };
 }
 

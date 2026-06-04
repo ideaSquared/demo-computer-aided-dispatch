@@ -100,6 +100,8 @@ describe('POST /api/triage/classify', () => {
           operator: operator(AuthV1.ServiceTier.FIRE, [AuthV1.Role.DISPATCHER]),
           abilityJson: abilityJsonForRoles('fire', ['dispatcher']),
           expiresAt: '2099-12-31T23:59:59Z',
+          csrfHash: '',
+          sessionId: 'sess-1',
         }),
       },
       triage: { classify: classifyFn },
@@ -154,6 +156,8 @@ describe('POST /api/triage/classify', () => {
           operator: operator(AuthV1.ServiceTier.FIRE, [AuthV1.Role.RESPONDER]),
           abilityJson: abilityJsonForRoles('fire', ['responder']),
           expiresAt: '2099-12-31T23:59:59Z',
+          csrfHash: '',
+          sessionId: 'sess-1',
         }),
       },
     });
@@ -177,6 +181,8 @@ describe('POST /api/triage/classify', () => {
           operator: operator(AuthV1.ServiceTier.POLICE, [AuthV1.Role.CALL_HANDLER]),
           abilityJson: abilityJsonForRoles('police', ['call_handler']),
           expiresAt: '2099-12-31T23:59:59Z',
+          csrfHash: '',
+          sessionId: 'sess-1',
         }),
       },
     });
@@ -200,6 +206,8 @@ describe('POST /api/triage/classify', () => {
           operator: operator(AuthV1.ServiceTier.FIRE, [AuthV1.Role.CALL_HANDLER]),
           abilityJson: abilityJsonForRoles('fire', ['call_handler']),
           expiresAt: '2099-12-31T23:59:59Z',
+          csrfHash: '',
+          sessionId: 'sess-1',
         }),
       },
     });
@@ -219,6 +227,8 @@ describe('POST /api/triage/classify', () => {
           operator: operator(AuthV1.ServiceTier.FIRE, [AuthV1.Role.DISPATCHER]),
           abilityJson: abilityJsonForRoles('fire', ['dispatcher']),
           expiresAt: '2099-12-31T23:59:59Z',
+          csrfHash: '',
+          sessionId: 'sess-1',
         }),
       },
       triage: {

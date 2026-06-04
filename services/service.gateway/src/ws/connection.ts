@@ -17,11 +17,11 @@ function send(socket: WebSocket, msg: ServerMessage): void {
 }
 
 /**
- * Resolve a Session from a WS connect request. The token comes in as
- * `?token=<jwt>` (URL query, because browsers can't attach Authorization
- * headers to the native WebSocket constructor). When `DEV_AUTH_BYPASS=true`
- * and no token is supplied, fall through to the Phase-1 URL stub for the
- * existing smokes.
+ * Resolve a Session from a WS connect request. Prefer the `cad_access`
+ * cookie (set by the gateway's /api/auth/login response) since it's the
+ * canonical browser transport now; fall back to `?token=<jwt>` for legacy
+ * smokes that can't easily attach cookies. When `DEV_AUTH_BYPASS=true`
+ * and neither is supplied, fall through to the Phase-1 URL stub.
  */
 async function readSession(
   req: FastifyRequest,
@@ -29,6 +29,15 @@ async function readSession(
   devAuthBypass: boolean,
   log: FastifyBaseLogger,
 ): Promise<Session | null> {
+  const cookieToken = req.cookies?.cad_access;
+  if (typeof cookieToken === 'string' && cookieToken.length > 0) {
+    const session = await authenticate(authClient, cookieToken);
+    if (!session) {
+      log.warn('rejecting WS connection: invalid access cookie');
+      return null;
+    }
+    return session;
+  }
   const q = (req.query ?? {}) as Record<string, string | string[] | undefined>;
   const tokenRaw = q.token;
   const token = Array.isArray(tokenRaw) ? tokenRaw[0] : tokenRaw;

@@ -1,5 +1,6 @@
 import type { Operator as ProtoOperator } from '@cad/proto';
 import { AuthV1 } from '@cad/proto';
+import type { CookieSerializeOptions } from '@fastify/cookie';
 import * as grpc from '@grpc/grpc-js';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
@@ -12,9 +13,97 @@ import type { AuthClient } from '../clients/auth.js';
  * through here. service.auth's gRPC + dev HTTP routes stay private to the
  * cluster.
  *
- * Token transport is the Authorization header (Bearer). HttpOnly cookies
- * with CSRF tokens are a later hardening — out of scope for the dev console.
+ * Token transport is HttpOnly cookies + a CSRF double-submit:
+ *   - `cad_access`  — JWT access token, HttpOnly + Secure (in prod) +
+ *                     SameSite=Lax, 15-minute TTL.
+ *   - `cad_refresh` — opaque refresh token, HttpOnly + Path=/api/auth/refresh
+ *                     so it's only ever sent to the rotate endpoint.
+ *   - `cad_csrf`    — fresh per-session CSRF token, NOT HttpOnly so the
+ *                     console JS can read it and echo back in the
+ *                     `x-csrf-token` header on mutating requests. The
+ *                     gateway's CSRF middleware verifies the
+ *                     header ↔ cookie pair against the session row.
+ *
+ * The response body still surfaces `csrfToken` (and the operator / ability /
+ * sessionId) so the console can prime its in-memory copy on first load
+ * without race-condition-ing the cookie. The access + refresh tokens are
+ * no longer in the body — the cookies carry them.
  */
+
+export const COOKIE_ACCESS = 'cad_access' as const;
+export const COOKIE_CSRF = 'cad_csrf' as const;
+export const COOKIE_REFRESH = 'cad_refresh' as const;
+
+/**
+ * 15-minute TTL mirrors `ACCESS_TOKEN_TTL_SECONDS` on service.auth; the
+ * refresh cookie's TTL is the refresh token lifetime (14 days). The
+ * cookie's Max-Age is "long enough" — server-side rotation / revocation
+ * is what really controls session lifetime.
+ */
+const ACCESS_MAX_AGE_SECONDS = 15 * 60;
+const REFRESH_MAX_AGE_SECONDS = 14 * 24 * 60 * 60;
+
+/**
+ * Mark cookies Secure in production. In dev (NODE_ENV !== 'production')
+ * we leave it off so the console works over plain http://localhost;
+ * production builds front the gateway with TLS so the browser keeps
+ * the cookie.
+ */
+function isSecure(): boolean {
+  return process.env.NODE_ENV === 'production';
+}
+
+function accessCookieOpts(): CookieSerializeOptions {
+  return {
+    httpOnly: true,
+    secure: isSecure(),
+    sameSite: 'lax',
+    path: '/',
+    maxAge: ACCESS_MAX_AGE_SECONDS,
+  };
+}
+
+function csrfCookieOpts(): CookieSerializeOptions {
+  return {
+    // CSRF cookie is intentionally readable by JS — the console echoes
+    // its value into the `x-csrf-token` header on mutating requests.
+    httpOnly: false,
+    secure: isSecure(),
+    sameSite: 'lax',
+    path: '/',
+    maxAge: ACCESS_MAX_AGE_SECONDS,
+  };
+}
+
+function refreshCookieOpts(): CookieSerializeOptions {
+  return {
+    httpOnly: true,
+    secure: isSecure(),
+    sameSite: 'lax',
+    // Scoped to the rotate endpoint so it never travels with normal API
+    // calls. Browsers send it only when the request path starts with this
+    // prefix.
+    path: '/api/auth/refresh',
+    maxAge: REFRESH_MAX_AGE_SECONDS,
+  };
+}
+
+function setSessionCookies(
+  reply: FastifyReply,
+  tokens: { accessToken: string; refreshToken: string; csrfToken: string },
+): void {
+  reply.setCookie(COOKIE_ACCESS, tokens.accessToken, accessCookieOpts());
+  reply.setCookie(COOKIE_CSRF, tokens.csrfToken, csrfCookieOpts());
+  reply.setCookie(COOKIE_REFRESH, tokens.refreshToken, refreshCookieOpts());
+}
+
+function clearSessionCookies(reply: FastifyReply): void {
+  // Same attributes as the setter (notably `path`) so the browser actually
+  // matches and clears each cookie. Max-Age=0 is the canonical delete.
+  reply.setCookie(COOKIE_ACCESS, '', { ...accessCookieOpts(), maxAge: 0 });
+  reply.setCookie(COOKIE_CSRF, '', { ...csrfCookieOpts(), maxAge: 0 });
+  reply.setCookie(COOKIE_REFRESH, '', { ...refreshCookieOpts(), maxAge: 0 });
+}
 
 // --- enum mapping (proto ↔ wire) -------------------------------------------
 
@@ -64,10 +153,6 @@ const LoginBodySchema = z.object({
   password: z.string().min(1),
 });
 
-const RefreshBodySchema = z.object({
-  refreshToken: z.string().min(1),
-});
-
 // --- error mapping ---------------------------------------------------------
 
 function isServiceError(err: unknown): err is grpc.ServiceError {
@@ -109,60 +194,72 @@ function replyValidation(reply: FastifyReply, err: z.ZodError): FastifyReply {
 // --- plugin ----------------------------------------------------------------
 
 export function registerAuthRoutes(app: FastifyInstance, client: AuthClient): void {
-  // Login: email+password → tokens + operator + abilityJson. The abilityJson
-  // is opaque to the gateway here — the console caches it for offline
-  // permission hints; the gateway re-validates the access token on every
-  // subsequent call via `ValidateToken`.
+  // Login: email+password → cookies + operator + abilityJson + csrfToken.
+  // The access + refresh tokens land in HttpOnly cookies; the CSRF token
+  // is echoed both in the JSON body (so the console can prime its
+  // in-memory copy on first paint without waiting for the cookie to
+  // surface) AND in the non-HttpOnly `cad_csrf` cookie (so the JS can
+  // re-read it on reload).
   app.post('/api/auth/login', async (req, reply) => {
     const body = LoginBodySchema.safeParse(req.body);
     if (!body.success) return replyValidation(reply, body.error);
     try {
       const res = await client.login(body.data);
       if (!res.operator) throw new Error('auth service returned no operator');
-      return reply.send({
+      setSessionCookies(reply, {
         accessToken: res.accessToken,
         refreshToken: res.refreshToken,
+        csrfToken: res.csrfToken,
+      });
+      return reply.send({
         expiresAt: res.expiresAt,
         sessionId: res.sessionId,
         abilityJson: res.abilityJson,
         operator: operatorToJson(res.operator),
+        csrfToken: res.csrfToken,
       });
     } catch (err) {
       return replyGrpcError(reply, err);
     }
   });
 
-  // Refresh: exchange the opaque refresh token for a new pair. The browser
-  // hits this just before access-token expiry; on 401 it bounces to /login.
+  // Refresh: reads the `cad_refresh` cookie (scoped to this path), rotates,
+  // sets fresh cookies. The body is empty — the cookie is the credential.
   app.post('/api/auth/refresh', async (req, reply) => {
-    const body = RefreshBodySchema.safeParse(req.body);
-    if (!body.success) return replyValidation(reply, body.error);
+    const refreshToken = req.cookies?.[COOKIE_REFRESH];
+    if (typeof refreshToken !== 'string' || refreshToken.length === 0) {
+      return reply.code(401).send({
+        error: { code: 'UNAUTHENTICATED', message: 'missing refresh cookie' },
+      });
+    }
     try {
-      const res = await client.refresh({ refreshToken: body.data.refreshToken });
+      const res = await client.refresh({ refreshToken });
       if (!res.operator) throw new Error('auth service returned no operator');
-      return reply.send({
+      setSessionCookies(reply, {
         accessToken: res.accessToken,
         refreshToken: res.refreshToken,
+        csrfToken: res.csrfToken,
+      });
+      return reply.send({
         expiresAt: res.expiresAt,
         sessionId: res.sessionId,
         abilityJson: res.abilityJson,
         operator: operatorToJson(res.operator),
+        csrfToken: res.csrfToken,
       });
     } catch (err) {
       return replyGrpcError(reply, err);
     }
   });
 
-  // Whoami: validates the Bearer token and returns the operator + ability.
-  // Useful on console boot to confirm a localStorage-cached session is
-  // still good before we trust it for routing.
+  // Whoami: reads the `cad_access` cookie, validates, and returns the
+  // operator + the current CSRF cookie value so the console can prime its
+  // in-memory state on boot. Read-only — no CSRF check.
   app.get('/api/auth/me', async (req, reply) => {
-    const header = req.headers.authorization;
-    const match = typeof header === 'string' ? /^Bearer\s+(.+)$/i.exec(header) : null;
-    const token = match?.[1];
+    const token = req.cookies?.[COOKIE_ACCESS];
     if (typeof token !== 'string' || token.length === 0) {
       return reply.code(401).send({
-        error: { code: 'UNAUTHENTICATED', message: 'missing access token' },
+        error: { code: 'UNAUTHENTICATED', message: 'missing access cookie' },
       });
     }
     const session = await authenticate(client, token);
@@ -171,6 +268,11 @@ export function registerAuthRoutes(app: FastifyInstance, client: AuthClient): vo
         error: { code: 'UNAUTHENTICATED', message: 'invalid access token' },
       });
     }
+    // The plaintext CSRF lives only in the cookie (the session row stores
+    // the hash). Re-echo whatever the browser sent so the console can
+    // hydrate its in-memory copy — we already verified the access cookie
+    // above so trusting the CSRF cookie's value is bounded by that.
+    const csrfToken = req.cookies?.[COOKIE_CSRF] ?? '';
     return reply.send({
       operator: {
         id: session.operator.id,
@@ -179,43 +281,38 @@ export function registerAuthRoutes(app: FastifyInstance, client: AuthClient): vo
         tier: session.operator.tier,
         roles: session.operator.roles,
       },
+      sessionId: session.sessionId,
+      csrfToken,
     });
   });
 
-  // Logout: revokes the session by id (carried in the body since access
-  // tokens don't include it explicitly). Best-effort — a 404 from the auth
-  // service still 200s here so an already-revoked session looks idempotent
-  // to the browser.
+  // Logout: clears the cookies and best-effort revokes the session row.
+  // The session id comes from the validated access cookie — accepting it
+  // in the body would let a malicious caller revoke someone else's
+  // session.
   app.post('/api/auth/logout', async (req, reply) => {
-    const schema = z.object({ sessionId: z.string().min(1) });
-    const body = schema.safeParse(req.body);
-    if (!body.success) return replyValidation(reply, body.error);
-    const header = req.headers.authorization;
-    const match = typeof header === 'string' ? /^Bearer\s+(.+)$/i.exec(header) : null;
-    const token = match?.[1];
+    const token = req.cookies?.[COOKIE_ACCESS];
     if (typeof token !== 'string' || token.length === 0) {
-      return reply.code(401).send({
-        error: { code: 'UNAUTHENTICATED', message: 'missing access token' },
-      });
+      clearSessionCookies(reply);
+      return reply.code(204).send();
     }
     const session = await authenticate(client, token);
     if (!session) {
-      return reply.code(401).send({
-        error: { code: 'UNAUTHENTICATED', message: 'invalid access token' },
-      });
+      clearSessionCookies(reply);
+      return reply.code(204).send();
     }
     try {
       await client.revokeSession({
-        sessionId: body.data.sessionId,
+        sessionId: session.sessionId,
         revokedBy: session.operator.id,
       });
-      return reply.code(204).send();
     } catch (err) {
-      if (isServiceError(err) && err.code === grpc.status.NOT_FOUND) {
-        return reply.code(204).send();
+      if (!(isServiceError(err) && err.code === grpc.status.NOT_FOUND)) {
+        req.log.warn({ err }, 'revokeSession failed during logout');
       }
-      return replyGrpcError(reply, err);
     }
+    clearSessionCookies(reply);
+    return reply.code(204).send();
   });
 
   // Dev role-switcher backend. Gated on the auth side by DEV_MODE — a

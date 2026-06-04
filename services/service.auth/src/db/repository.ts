@@ -20,6 +20,7 @@ interface SessionRow {
   operator_id: string;
   refresh_token_hash: string;
   access_token_id: string;
+  csrf_hash: string;
   issued_at: string;
   expires_at: string;
   revoked_at: string | null;
@@ -60,6 +61,7 @@ function toSession(row: SessionRow): Session {
     operatorId: row.operator_id,
     refreshTokenHash: row.refresh_token_hash,
     accessTokenId: row.access_token_id,
+    csrfHash: row.csrf_hash,
     issuedAt: row.issued_at,
     expiresAt: row.expires_at,
     revokedAt: row.revoked_at,
@@ -188,19 +190,21 @@ export async function createSession(
     operatorId: string;
     refreshTokenHash: string;
     accessTokenId: string;
+    csrfHash: string;
     expiresAt: string;
   },
 ): Promise<Session> {
   const rows = await db<SessionRow[]>`
-    INSERT INTO sessions (id, operator_id, refresh_token_hash, access_token_id, expires_at)
+    INSERT INTO sessions (id, operator_id, refresh_token_hash, access_token_id, csrf_hash, expires_at)
     VALUES (
       ${input.id},
       ${input.operatorId},
       ${input.refreshTokenHash},
       ${input.accessTokenId},
+      ${input.csrfHash},
       ${input.expiresAt}
     )
-    RETURNING id, operator_id, refresh_token_hash, access_token_id, issued_at, expires_at, revoked_at
+    RETURNING id, operator_id, refresh_token_hash, access_token_id, csrf_hash, issued_at, expires_at, revoked_at
   `;
   const row = rows[0];
   if (!row) {
@@ -219,7 +223,7 @@ export async function findSessionByRefreshHash(
   refreshTokenHash: string,
 ): Promise<Session | null> {
   const rows = await db<SessionRow[]>`
-    SELECT id, operator_id, refresh_token_hash, access_token_id, issued_at, expires_at, revoked_at
+    SELECT id, operator_id, refresh_token_hash, access_token_id, csrf_hash, issued_at, expires_at, revoked_at
     FROM sessions
     WHERE refresh_token_hash = ${refreshTokenHash}
     LIMIT 1
@@ -239,7 +243,7 @@ export async function findUnrevokedSessionByAccessTokenId(
   accessTokenId: string,
 ): Promise<Session | null> {
   const rows = await db<SessionRow[]>`
-    SELECT id, operator_id, refresh_token_hash, access_token_id, issued_at, expires_at, revoked_at
+    SELECT id, operator_id, refresh_token_hash, access_token_id, csrf_hash, issued_at, expires_at, revoked_at
     FROM sessions
     WHERE access_token_id = ${accessTokenId} AND revoked_at IS NULL
     LIMIT 1
@@ -250,7 +254,7 @@ export async function findUnrevokedSessionByAccessTokenId(
 
 export async function findSessionById(db: DbClient, id: string): Promise<Session | null> {
   const rows = await db<SessionRow[]>`
-    SELECT id, operator_id, refresh_token_hash, access_token_id, issued_at, expires_at, revoked_at
+    SELECT id, operator_id, refresh_token_hash, access_token_id, csrf_hash, issued_at, expires_at, revoked_at
     FROM sessions
     WHERE id = ${id}
     LIMIT 1

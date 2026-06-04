@@ -1,5 +1,6 @@
 import { connect } from '@cad/events';
 import { createRedisSubscriber } from '@cad/redis';
+import cookie from '@fastify/cookie';
 import websocket from '@fastify/websocket';
 import Fastify from 'fastify';
 import { createAuditClient } from './clients/audit.js';
@@ -27,6 +28,13 @@ const app = Fastify({
 });
 
 app.get('/health', async () => ({ status: 'ok', service: 'service.gateway' }));
+
+// Cookie plugin is registered before any route so login/refresh/me/logout
+// can set + read `cad_access` / `cad_refresh` / `cad_csrf`. No `secret`
+// option — none of our cookies are signed; they carry opaque tokens whose
+// authenticity is checked server-side (JWT signature, session row lookup,
+// CSRF hash compare).
+await app.register(cookie);
 
 // Wire deps BEFORE listen so missing deps fail startup, not later.
 const nats = await connect(config.NATS_URL);
