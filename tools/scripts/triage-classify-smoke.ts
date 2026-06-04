@@ -27,11 +27,12 @@ const GATEWAY_PORT = Number(process.env.SMOKE_GATEWAY_PORT ?? '5000');
 const AUTH_BASE = `http://${HOST}:${AUTH_PORT}`;
 const GATEWAY_BASE = `http://${HOST}:${GATEWAY_PORT}`;
 const HEALTH_DEADLINE_MS = Number(process.env.SMOKE_HEALTH_DEADLINE_MS ?? '60000');
-// 120s by default — CI observed the chip landing at ~59s on a cold runner
-// (Ollama model load + classify + NATS round-trip). 60s was right at the
-// edge; widen so we don't flake on a slow first generation. Local-dev
+// 180s by default — CI flaked at 121s with the previous 120s deadline.
+// Ollama model load + classify + NATS round-trip is right at this boundary
+// on a cold CPU runner; the extra 60s leaves headroom without lengthening
+// the happy path (the smoke exits as soon as the chip lands). Local-dev
 // override via SMOKE_CHIP_DEADLINE_MS.
-const CHIP_DEADLINE_MS = Number(process.env.SMOKE_CHIP_DEADLINE_MS ?? '120000');
+const CHIP_DEADLINE_MS = Number(process.env.SMOKE_CHIP_DEADLINE_MS ?? '180000');
 
 interface LoginView {
   accessToken: string;
