@@ -1,6 +1,6 @@
 import type { DbClient } from '@cad/db';
-import type { NatsConnection } from '@cad/events';
-import { subjects, subscribe } from '@cad/events';
+import type { DurableSubscription, NatsConnection } from '@cad/events';
+import { STREAMS, subjects, subscribeDurable } from '@cad/events';
 import { AuditActionTakenSchema } from '@cad/events/audit';
 import { withSpan } from '@cad/observability';
 import { appendAuditRow } from '../db/repository.js';
@@ -14,27 +14,26 @@ interface Ctx {
 /**
  * Consume `audit.actionTaken` and append each event to `audit_events`.
  *
- * The schema validation lives inside `@cad/events.subscribe`; this handler
- * sees only fully-validated `AuditActionTaken` envelopes. Schema-violating
- * messages are logged + dropped upstream (NATS at-least-once is fine for
- * audit: a malformed deny event is logged twice in the daemon log, not
- * silently lost).
+ * Backed by a durable JetStream consumer (`audit-action-taken`) — a service
+ * that's been down catches up on every missed event on restart. The handler
+ * is at-least-once + idempotent: `appendAuditRow` does ON CONFLICT DO
+ * NOTHING on `idempotency_key`, so a re-delivery (planned replay or
+ * redelivery after a crash) is a no-op.
  *
- * Idempotent: `appendAuditRow` does ON CONFLICT DO NOTHING on
- * `idempotency_key`, so a re-delivery is a no-op. We don't surface the
- * duplicate to the caller (audit consumers don't care).
- *
- * Per-message try/catch: a bad row should NEVER crash the consume loop.
- * The bus throws on any handler error to propagate it up; we swallow here
- * after logging because audit is a tail and "skip-on-skew" is the right
- * policy (PRD: never let audit be the thing that takes the gateway down).
+ * Skip-on-skew: a thrown insert is swallowed by the inner try/catch so the
+ * consumer keeps making progress (audit is a tail; never let it block).
+ * The durable cursor advances on ack — exactly what the bus does when the
+ * outer handler returns normally.
  */
-export function subscribeAuditActionTaken(ctx: Ctx): Promise<void> {
-  return subscribe(
-    { nats: ctx.nats },
-    subjects.AuditActionTaken,
-    AuditActionTakenSchema,
-    async (event) =>
+export function subscribeAuditActionTaken(ctx: Ctx): Promise<DurableSubscription> {
+  return subscribeDurable({
+    nats: ctx.nats,
+    stream: STREAMS.audit.name,
+    filterSubject: subjects.AuditActionTaken,
+    durableName: 'audit-action-taken',
+    schema: AuditActionTakenSchema,
+    log: ctx.log,
+    handler: (event) =>
       withSpan('audit.consume', async (span) => {
         try {
           span.setAttribute('audit.action', event.action);
@@ -67,13 +66,15 @@ export function subscribeAuditActionTaken(ctx: Ctx): Promise<void> {
             );
           }
         } catch (err) {
-          // Skip-on-skew: log + carry on. Crashing the consumer would
-          // make missing-from-audit-log a deploy-blocking outage.
+          // Skip-on-skew: log + carry on. Throwing would NAK the message,
+          // and a permanently-broken row (e.g. bad schema migration in
+          // flight) would burn redeliveries until DLQ. Audit is a tail;
+          // never let it stall.
           ctx.log.error(
             { err, eventId: event.eventId, action: event.action },
             'failed to persist audit event',
           );
         }
       }),
-  );
+  });
 }

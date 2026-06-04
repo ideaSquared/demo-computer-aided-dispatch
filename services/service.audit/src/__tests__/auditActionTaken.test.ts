@@ -2,19 +2,40 @@ import { randomUUID } from 'node:crypto';
 import type { DbClient } from '@cad/db';
 import type { NatsConnection } from '@cad/events';
 import type { AuditActionTaken } from '@cad/events/audit';
-import { JSONCodec } from 'nats';
 import { describe, expect, it, vi } from 'vitest';
 import { subscribeAuditActionTaken } from '../subscribers/auditActionTaken.js';
 
 /**
- * The subscriber under test calls `@cad/events`'s `subscribe`, which
- * iterates `nats.subscribe(subject)`. We supply a fake NATS connection
- * whose subscribe() returns an async iterable yielding our test messages.
+ * The subscriber under test calls `@cad/events.subscribeDurable`, which
+ * binds a durable JetStream consumer. We intercept the helper at the
+ * module boundary so the test never spins up a real JetStream — the
+ * captured handler is then driven directly with pre-baked payloads.
  *
  * The fake DB records every INSERT — both the resolved promise (so the
  * handler's `await` settles) and the row payload. We swing the resolved
  * row count to simulate ON CONFLICT collisions for the idempotency case.
  */
+
+vi.mock('@cad/events', async () => {
+  const actual = await vi.importActual<typeof import('@cad/events')>('@cad/events');
+  return {
+    ...actual,
+    subscribeDurable: vi.fn(
+      async (opts: { schema: CapturedSchema; handler: (e: unknown) => Promise<void> }) => {
+        capturedSchema = opts.schema;
+        capturedHandler = opts.handler;
+        return { stop: async () => undefined };
+      },
+    ),
+  };
+});
+
+interface CapturedSchema {
+  safeParse: (x: unknown) => { success: true; data: unknown } | { success: false };
+}
+
+let capturedSchema: CapturedSchema | undefined;
+let capturedHandler: ((event: unknown) => Promise<void> | void) | undefined;
 
 interface CapturedInsert {
   text: string;
@@ -63,33 +84,29 @@ function makeFakeDb(): FakeDb {
   };
 }
 
-/** Minimal NATS-connection fake yielding our pre-baked encoded messages. */
-function makeFakeNats(events: AuditActionTaken[]): NatsConnection {
-  const codec = JSONCodec<unknown>();
-  return {
-    subscribe: () => {
-      return {
-        [Symbol.asyncIterator]() {
-          let i = 0;
-          return {
-            async next() {
-              if (i >= events.length) return { value: undefined, done: true as const };
-              const value = { data: codec.encode(events[i] as unknown) };
-              i += 1;
-              return { value, done: false as const };
-            },
-          };
-        },
-      };
-    },
-  } as unknown as NatsConnection;
-}
-
 function makeLog() {
   return {
     info: vi.fn(),
     error: vi.fn(),
   };
+}
+
+function resetCaptured(): void {
+  capturedSchema = undefined;
+  capturedHandler = undefined;
+}
+
+/**
+ * Drive the captured handler the way the bus would: validate the payload
+ * against the schema first; on a parse failure, the bus would ack-and-drop
+ * without invoking the handler. That mirrors `subscribeDurable`'s real
+ * behaviour for the poison-pill test below.
+ */
+async function deliver(payload: unknown): Promise<void> {
+  if (!capturedSchema || !capturedHandler) throw new Error('handler not captured');
+  const parsed = capturedSchema.safeParse(payload);
+  if (!parsed.success) return;
+  await capturedHandler(parsed.data);
 }
 
 const sample = (overrides: Partial<AuditActionTaken> = {}): AuditActionTaken => ({
@@ -106,14 +123,16 @@ const sample = (overrides: Partial<AuditActionTaken> = {}): AuditActionTaken => 
 
 describe('subscribeAuditActionTaken', () => {
   it('persists a validated event and the SQL carries every column', async () => {
+    resetCaptured();
     const event = sample();
     const db = makeFakeDb();
     const log = makeLog();
     await subscribeAuditActionTaken({
       db: db.sql,
-      nats: makeFakeNats([event]),
+      nats: {} as NatsConnection,
       log,
     });
+    await deliver(event);
     expect(db.inserts).toHaveLength(1);
     const ins = db.inserts[0];
     expect(ins?.text).toMatch(/INSERT INTO audit_events/);
@@ -139,6 +158,7 @@ describe('subscribeAuditActionTaken', () => {
   });
 
   it('idempotency: a duplicate insert resolves to zero rows and is silently dropped', async () => {
+    resetCaptured();
     const event = sample();
     const db = makeFakeDb();
     const log = makeLog();
@@ -146,9 +166,11 @@ describe('subscribeAuditActionTaken', () => {
     db.setNextReturn([]);
     await subscribeAuditActionTaken({
       db: db.sql,
-      nats: makeFakeNats([event, event]),
+      nats: {} as NatsConnection,
       log,
     });
+    await deliver(event);
+    await deliver(event);
     expect(db.inserts).toHaveLength(2);
     // The handler logged once for the (simulated) first insert path that
     // returned zero rows. Either way, error log MUST NOT fire on a
@@ -157,6 +179,7 @@ describe('subscribeAuditActionTaken', () => {
   });
 
   it('skip-on-skew: a failing insert logs but does not abort the loop', async () => {
+    resetCaptured();
     const event = sample();
     let calls = 0;
     function exploding(): Promise<unknown[]> {
@@ -168,9 +191,11 @@ describe('subscribeAuditActionTaken', () => {
     const log = makeLog();
     await subscribeAuditActionTaken({
       db: exploding as unknown as DbClient,
-      nats: makeFakeNats([event, event]),
+      nats: {} as NatsConnection,
       log,
     });
+    await deliver(event);
+    await deliver(event);
     expect(log.error).toHaveBeenCalledTimes(1);
     // Loop kept going — the second message produced a successful insert
     // (no second error log).
@@ -178,6 +203,7 @@ describe('subscribeAuditActionTaken', () => {
   });
 
   it('drops a schema-violating message without invoking the DB', async () => {
+    resetCaptured();
     // A payload with bogus outcome — Zod will reject it inside @cad/events.
     const bad = {
       eventId: randomUUID(),
@@ -193,9 +219,10 @@ describe('subscribeAuditActionTaken', () => {
     const log = makeLog();
     await subscribeAuditActionTaken({
       db: db.sql,
-      nats: makeFakeNats([bad]),
+      nats: {} as NatsConnection,
       log,
     });
+    await deliver(bad);
     expect(db.inserts).toHaveLength(0);
   });
 });
