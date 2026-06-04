@@ -30,6 +30,13 @@ export interface Session {
   operatorId: string;
   refreshTokenHash: string;
   accessTokenId: string;
+  /**
+   * sha256 of the session's CSRF token. The plaintext is set as a
+   * (non-HttpOnly) cookie + echoed in the login/refresh response; the
+   * gateway re-hashes the inbound `x-csrf-token` header and compares
+   * against this column to verify the double-submit.
+   */
+  csrfHash: string;
   issuedAt: string;
   expiresAt: string;
   revokedAt: string | null;

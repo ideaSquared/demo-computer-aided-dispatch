@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type { DbClient } from '@cad/db';
 import type { NatsConnection } from '@cad/events';
 import { publish, subjects } from '@cad/events';
@@ -64,12 +64,49 @@ export interface TokenPair {
   /** JSON-stringified raw CASL rules array. */
   abilityJson: string;
   sessionId: string;
+  /**
+   * Plaintext CSRF token bound to the session. The gateway returns this
+   * to the browser as a (non-HttpOnly) cookie + a body field so the
+   * console can prime its in-memory copy without waiting for the cookie
+   * to surface. The session row stores only the sha256.
+   */
+  csrfToken: string;
 }
 
 export interface ValidatedSession {
   operator: Operator;
   abilityJson: string;
   expiresAt: string;
+  /**
+   * sha256 of the session's CSRF token. The gateway hashes the inbound
+   * `x-csrf-token` header / `cad_csrf` cookie and compares to this value
+   * to verify the double-submit. We deliberately don't surface the
+   * plaintext on the wire from validate — the cookie carries it, and
+   * the session row persists only the hash.
+   */
+  csrfHash: string;
+  sessionId: string;
+}
+
+/**
+ * Mint a fresh CSRF token + its sha256. 32 random bytes → 64 hex chars.
+ * The plaintext is returned to the client (cookie + response body); only
+ * the hash is persisted on the session row. Exported for tests; production
+ * callers go through login/refresh.
+ */
+export function issueCsrfToken(): { token: string; hash: string } {
+  const token = randomBytes(32).toString('hex');
+  const hash = createHash('sha256').update(token).digest('hex');
+  return { token, hash };
+}
+
+/**
+ * Re-hash a plaintext CSRF token the same way `issueCsrfToken` did, so the
+ * gateway can compare the inbound header against the stored hash without
+ * importing crypto internals from this module.
+ */
+export function hashCsrfToken(token: string): string {
+  return createHash('sha256').update(token).digest('hex');
 }
 
 export function abilityJsonFor(operator: Operator): string {
@@ -160,11 +197,13 @@ export async function login(
     secret: deps.jwtSecret,
   });
   const refresh = issueRefreshToken({ ttlSeconds: deps.refreshTokenTtlSeconds });
+  const csrf = issueCsrfToken();
   const session = await createSession(deps.db, {
     id: newId(),
     operatorId: operator.id,
     refreshTokenHash: refresh.hash,
     accessTokenId: access.accessTokenId,
+    csrfHash: csrf.hash,
     expiresAt: refresh.expiresAt,
   });
 
@@ -187,6 +226,7 @@ export async function login(
     operator,
     abilityJson: abilityJsonFor(operator),
     sessionId: session.id,
+    csrfToken: csrf.token,
   };
 }
 
@@ -244,11 +284,13 @@ export async function refresh(
     secret: deps.jwtSecret,
   });
   const newRefresh = issueRefreshToken({ ttlSeconds: deps.refreshTokenTtlSeconds });
+  const newCsrf = issueCsrfToken();
   const newSession = await createSession(deps.db, {
     id: newId(),
     operatorId: operator.id,
     refreshTokenHash: newRefresh.hash,
     accessTokenId: access.accessTokenId,
+    csrfHash: newCsrf.hash,
     expiresAt: newRefresh.expiresAt,
   });
 
@@ -259,6 +301,7 @@ export async function refresh(
     operator,
     abilityJson: abilityJsonFor(operator),
     sessionId: newSession.id,
+    csrfToken: newCsrf.token,
   };
 }
 
@@ -288,6 +331,8 @@ export async function validateToken(
     operator,
     abilityJson: abilityJsonFor(operator),
     expiresAt: verified.expiresAt,
+    csrfHash: session.csrfHash,
+    sessionId: session.id,
   };
 }
 

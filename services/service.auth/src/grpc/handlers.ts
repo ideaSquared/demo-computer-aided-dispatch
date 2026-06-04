@@ -51,6 +51,7 @@ export function createHandlers(deps: HandlerDeps): AuthV1.AuthServiceServer {
             operator: toProtoOperator(result.operator),
             abilityJson: result.abilityJson,
             sessionId: result.sessionId,
+            csrfToken: result.csrfToken,
           });
         } catch (err) {
           callback(internalError(err), null);
@@ -73,6 +74,7 @@ export function createHandlers(deps: HandlerDeps): AuthV1.AuthServiceServer {
             operator: toProtoOperator(result.operator),
             abilityJson: result.abilityJson,
             sessionId: result.sessionId,
+            csrfToken: result.csrfToken,
           });
         } catch (err) {
           callback(internalError(err), null);
@@ -92,6 +94,8 @@ export function createHandlers(deps: HandlerDeps): AuthV1.AuthServiceServer {
             operator: toProtoOperator(result.operator),
             abilityJson: result.abilityJson,
             expiresAt: result.expiresAt,
+            csrfHash: result.csrfHash,
+            sessionId: result.sessionId,
           });
         } catch (err) {
           callback(internalError(err), null);
