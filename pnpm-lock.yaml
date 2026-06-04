@@ -50,6 +50,9 @@ importers:
       '@cad/events':
         specifier: workspace:*
         version: link:../../packages/events
+      '@cad/lib.authz':
+        specifier: workspace:*
+        version: link:../../packages/lib.authz
       '@cad/lib.ui':
         specifier: workspace:*
         version: link:../../packages/ui

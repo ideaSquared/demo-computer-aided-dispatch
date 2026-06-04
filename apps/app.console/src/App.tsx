@@ -1,19 +1,32 @@
 import { Badge, Button, StatusDot } from '@cad/lib.ui';
 import { type ReactElement, useEffect, useMemo, useState } from 'react';
+import {
+  BrowserRouter,
+  Navigate,
+  NavLink,
+  Route,
+  Routes,
+  useLocation,
+  useNavigate,
+} from 'react-router-dom';
 import * as styles from './App.css.js';
 import { AuthProvider, useAuth } from './auth/AuthProvider.js';
+import { useAbility } from './auth/ability.js';
 import { LoginPage } from './auth/LoginPage.js';
 import type { Session } from './auth/session.js';
+import { CallIntakePage } from './call-intake/CallIntakePage.js';
+import { CrossTierOverviewPage } from './cross-tier/CrossTierOverviewPage.js';
+import { DispatchQueuePage } from './dispatch-queue/DispatchQueuePage.js';
 import { FleetPanel } from './fleet/FleetPanel.js';
 import { useFleet } from './fleet/useFleet.js';
 import { IncidentBoard } from './incidents/IncidentBoard.js';
 import { useIncidents } from './incidents/useIncidents.js';
 import { IncidentMap } from './map/IncidentMap.js';
+import { OversightPage } from './oversight/OversightPage.js';
 import { type Identity, identityFromSession, wsUrlFor } from './presence/identity.js';
 import { PresenceView } from './presence/PresencePage.js';
+import { defaultPathFor, type ViewDef, visibleViews } from './routing/views.js';
 import { useWs } from './ws/useWs.js';
-
-type Tab = 'incidents' | 'map' | 'fleet' | 'presence';
 
 const TIER_TO_BADGE: Record<Identity['tier'], 'police' | 'medical' | 'fire'> = {
   police: 'police',
@@ -24,7 +37,9 @@ const TIER_TO_BADGE: Record<Identity['tier'], 'police' | 'medical' | 'fire'> = {
 export function App() {
   return (
     <AuthProvider>
-      <Gate />
+      <BrowserRouter>
+        <Gate />
+      </BrowserRouter>
     </AuthProvider>
   );
 }
@@ -42,11 +57,17 @@ function ConsoleShell({ session }: { session: Session }) {
   const identity = useMemo(() => identityFromSession(session), [session]);
   const url = wsUrlFor();
   const { status, subscribe, send } = useWs({ url });
-  const [tab, setTab] = useState<Tab>('incidents');
   const { logout, switchOperator } = useAuth();
+  const ability = useAbility(session);
 
   const incidents = useIncidents({ subscribe });
   const fleet = useFleet({ subscribe });
+
+  const sidebar = useMemo(() => visibleViews(ability, identity), [ability, identity]);
+  const defaultPath = useMemo(
+    () => defaultPathFor(session.operator.roles, ability, identity),
+    [session.operator.roles, ability, identity],
+  );
 
   return (
     <div className={styles.shell}>
@@ -57,22 +78,66 @@ function ConsoleShell({ session }: { session: Session }) {
         onLogout={logout}
         onSwitch={switchOperator}
       />
-      <SidebarRail active={tab} onChange={setTab} />
+      <SidebarRail views={sidebar} />
+      <ViewGuard sidebar={sidebar} defaultPath={defaultPath} />
       <div className={styles.main}>
         <div className={styles.mainContent}>
-          {tab === 'incidents' ? (
-            <IncidentBoard identity={identity} incidents={incidents} fleet={fleet} />
-          ) : tab === 'map' ? (
-            <IncidentMap identity={identity} incidents={incidents} fleet={fleet} />
-          ) : tab === 'fleet' ? (
-            <FleetPanel identity={identity} fleet={fleet} />
-          ) : (
-            <PresenceView status={status} subscribe={subscribe} send={send} />
-          )}
+          <Routes>
+            <Route path="/" element={<Navigate to={defaultPath} replace />} />
+            <Route
+              path="/call-intake"
+              element={<CallIntakePage identity={identity} incidents={incidents} />}
+            />
+            <Route
+              path="/dispatch-queue"
+              element={
+                <DispatchQueuePage identity={identity} incidents={incidents} fleet={fleet} />
+              }
+            />
+            <Route
+              path="/incidents"
+              element={<IncidentBoard identity={identity} incidents={incidents} fleet={fleet} />}
+            />
+            <Route
+              path="/cross-tier"
+              element={<CrossTierOverviewPage identity={identity} incidents={incidents} />}
+            />
+            <Route
+              path="/map"
+              element={<IncidentMap identity={identity} incidents={incidents} fleet={fleet} />}
+            />
+            <Route path="/fleet" element={<FleetPanel identity={identity} fleet={fleet} />} />
+            <Route
+              path="/oversight"
+              element={<OversightPage identity={identity} incidents={incidents} />}
+            />
+            <Route
+              path="/presence"
+              element={<PresenceView status={status} subscribe={subscribe} send={send} />}
+            />
+            <Route path="*" element={<Navigate to={defaultPath} replace />} />
+          </Routes>
         </div>
       </div>
     </div>
   );
+}
+
+/**
+ * If the current URL points to a view this operator can't see (e.g. after a
+ * dev-switch from `supervisor` to `observer` left us on `/oversight`),
+ * redirect to the role's default landing. Sidebar already hides the link;
+ * this closes the URL-typing / persona-swap gap.
+ */
+function ViewGuard({ sidebar, defaultPath }: { sidebar: readonly ViewDef[]; defaultPath: string }) {
+  const location = useLocation();
+  const navigate = useNavigate();
+  useEffect(() => {
+    if (location.pathname === '/') return;
+    const allowed = sidebar.some((v) => v.path === location.pathname);
+    if (!allowed) navigate(defaultPath, { replace: true });
+  }, [location.pathname, sidebar, defaultPath, navigate]);
+  return null;
 }
 
 type WsStatus = 'connecting' | 'open' | 'reconnecting' | 'closed';
@@ -155,46 +220,37 @@ function formatClock(d: Date): string {
   return `${h}:${m}:${s}`;
 }
 
-const RAIL_ITEMS: ReadonlyArray<{ id: Tab; label: string; icon: ReactElement }> = [
-  {
-    id: 'incidents',
-    label: 'incidents',
-    icon: <IconIncidents />,
-  },
-  {
-    id: 'map',
-    label: 'map',
-    icon: <IconMap />,
-  },
-  {
-    id: 'fleet',
-    label: 'fleet',
-    icon: <IconFleet />,
-  },
-  {
-    id: 'presence',
-    label: 'presence',
-    icon: <IconPresence />,
-  },
-];
+const ICONS: Record<string, ReactElement> = {
+  'call-intake': <IconCallIntake />,
+  'dispatch-queue': <IconDispatch />,
+  incidents: <IconIncidents />,
+  'cross-tier': <IconCrossTier />,
+  map: <IconMap />,
+  fleet: <IconFleet />,
+  oversight: <IconOversight />,
+  presence: <IconPresence />,
+};
 
-function SidebarRail({ active, onChange }: { active: Tab; onChange: (tab: Tab) => void }) {
+function SidebarRail({ views }: { views: readonly ViewDef[] }) {
+  const location = useLocation();
   return (
     <nav className={styles.rail} aria-label="primary">
-      {RAIL_ITEMS.map((item) => (
-        <button
-          key={item.id}
-          type="button"
-          aria-current={item.id === active ? 'page' : undefined}
-          className={styles.railItem({ active: item.id === active })}
-          onClick={() => onChange(item.id)}
-        >
-          <span className={styles.railIcon} aria-hidden="true">
-            {item.icon}
-          </span>
-          <span>{item.label}</span>
-        </button>
-      ))}
+      {views.map((view) => {
+        const active = location.pathname === view.path;
+        return (
+          <NavLink
+            key={view.id}
+            to={view.path}
+            aria-current={active ? 'page' : undefined}
+            className={styles.railItem({ active })}
+          >
+            <span className={styles.railIcon} aria-hidden="true">
+              {ICONS[view.id] ?? <IconIncidents />}
+            </span>
+            <span>{view.label}</span>
+          </NavLink>
+        );
+      })}
     </nav>
   );
 }
@@ -261,6 +317,70 @@ function IconPresence() {
       <path d="M3 20c0-3 3-5 6-5s6 2 6 5" />
       <circle cx="17" cy="8" r="2.5" />
       <path d="M15 20c0-2.5 2-4.5 5-4.5" />
+    </svg>
+  );
+}
+function IconCallIntake() {
+  return (
+    <svg
+      width="20"
+      height="20"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
+      <title>call intake</title>
+      <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.79 19.79 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7a2 2 0 0 1 1.72 2.02z" />
+    </svg>
+  );
+}
+function IconDispatch() {
+  return (
+    <svg
+      width="20"
+      height="20"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
+      <title>dispatch queue</title>
+      <path d="M3 6h18M3 12h12M3 18h18" />
+      <circle cx="20" cy="12" r="1.5" fill="currentColor" />
+    </svg>
+  );
+}
+function IconCrossTier() {
+  return (
+    <svg
+      width="20"
+      height="20"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
+      <title>cross-tier</title>
+      <rect x="3" y="4" width="5" height="16" rx="1" />
+      <rect x="10" y="4" width="5" height="16" rx="1" />
+      <rect x="17" y="4" width="4" height="16" rx="1" />
+    </svg>
+  );
+}
+function IconOversight() {
+  return (
+    <svg
+      width="20"
+      height="20"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
+      <title>oversight</title>
+      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" />
+      <circle cx="12" cy="12" r="3" />
     </svg>
   );
 }

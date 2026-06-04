@@ -18,6 +18,7 @@ export default defineConfig(({ mode }) => {
     mode === 'development'
       ? {
           '@cad/lib.ui': resolve(repoRoot, 'packages/ui/src'),
+          '@cad/lib.authz': resolve(repoRoot, 'packages/lib.authz/src/index.ts'),
           '@cad/events/presence': resolve(repoRoot, 'packages/events/src/presence/index.ts'),
           '@cad/events': resolve(repoRoot, 'packages/events/src/index.ts'),
         }

@@ -3,6 +3,7 @@ import {
   createMongoAbility,
   type ForcedSubject,
   type MongoAbility,
+  type RawRuleOf,
 } from '@casl/ability';
 import type { Role, ServiceTier } from './roles.js';
 
@@ -133,4 +134,19 @@ export function defineAbilitiesFor(ctx: OperatorContext): AppAbility {
   }
 
   return build();
+}
+
+/**
+ * Reconstruct an `AppAbility` from the JSON string the auth service emits
+ * (`JSON.stringify(ability.rules)` — see `service.auth/core.ts`). Used by
+ * the console so the UI can `ability.can(...)` without re-deriving from
+ * `(tier, roles, assignments)`, keeping the auth service the single source
+ * of truth for the matrix.
+ *
+ * Throws on invalid JSON — callers should treat a parse failure the same
+ * as an unauthenticated state and force a re-login.
+ */
+export function hydrateAbility(json: string): AppAbility {
+  const rules = JSON.parse(json) as RawRuleOf<AppAbility>[];
+  return createMongoAbility<AppAbility>(rules);
 }

@@ -21,6 +21,7 @@ export {
   type Action,
   type AppAbility,
   defineAbilitiesFor,
+  hydrateAbility,
   type OperatorContext,
   type Subject,
 } from './abilities.js';
