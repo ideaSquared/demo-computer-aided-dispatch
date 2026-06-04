@@ -84,6 +84,13 @@ message LoginResponse {
   string ability_json = 5;
   // The session row id. Useful for RevokeSession + audit logs.
   string session_id = 6;
+  // Plaintext CSRF token bound to this session. The gateway sets this as
+  // a (non-HttpOnly) cookie so browser JS can read it, AND echoes it in
+  // the login response body so the console can prime its in-memory copy
+  // on first load. The server stores only the sha256 hash on the session
+  // row; mutating requests must present the matching value via the
+  // `x-csrf-token` header (double-submit pattern).
+  string csrf_token = 7;
 }
 
 message RefreshResponse {
@@ -93,12 +100,22 @@ message RefreshResponse {
   Operator operator = 4;
   string ability_json = 5;
   string session_id = 6;
+  // Rotated alongside the token pair — see LoginResponse.csrf_token.
+  string csrf_token = 7;
 }
 
 message ValidateTokenResponse {
   Operator operator = 1;
   string ability_json = 2;
   string expires_at = 3;
+  // sha256 of the session's CSRF token. The gateway hashes the inbound
+  // `x-csrf-token` header / `cad_csrf` cookie and compares to this
+  // value. We never put the plaintext on the wire here — it lives only
+  // in the cookie the gateway issued at login time.
+  string csrf_hash = 4;
+  // The session id this token belongs to. Useful for audit attribution
+  // and for the gateway to re-prime the CSRF cookie if it ever drifts.
+  string session_id = 5;
 }
 
 message RevokeSessionResponse {}
