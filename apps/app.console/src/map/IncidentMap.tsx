@@ -1,5 +1,5 @@
 import { Stack } from '@cad/lib.ui';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { UseFleetResult } from '../fleet/useFleet.js';
 import { bindIncidentActions, IncidentActions } from '../incidents/IncidentActions.js';
 import * as board from '../incidents/IncidentBoard.css.js';
@@ -9,15 +9,10 @@ import type { Incident, Severity } from '../services/incident.js';
 import type { Unit, UnitState } from '../services/units.js';
 import { UNIT_STATES } from '../services/units.js';
 import * as styles from './IncidentMap.css.js';
-import { project } from './projection.js';
+import { LeafletMap } from './LeafletMap.js';
 
 const SEVERITY_KEYS: ReadonlyArray<Severity> = ['low', 'medium', 'high', 'critical'];
 const UNIT_STATUS_KEYS: ReadonlyArray<UnitState> = UNIT_STATES;
-
-/** Map a (possibly null) severity to the marker/legend colour variant. */
-function severityVariant(severity: Severity | null): 'none' | Severity {
-  return severity ?? 'none';
-}
 
 export interface IncidentMapProps {
   readonly identity: Identity;
@@ -28,14 +23,12 @@ export interface IncidentMapProps {
 }
 
 export function IncidentMap({ identity, incidents: source, fleet }: IncidentMapProps) {
-  const { incidents, loading, error } = source;
+  const { incidents, error } = source;
   const { units } = fleet;
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null);
 
-  const located = useMemo(() => incidents.filter((i) => i.location !== null), [incidents]);
   const unlocated = useMemo(() => incidents.filter((i) => i.location === null), [incidents]);
-  const locatedUnits = useMemo(() => units.filter((u) => u.location !== null), [units]);
   const unlocatedUnits = useMemo(() => units.filter((u) => u.location === null), [units]);
 
   // Drop the selection when its incident leaves the open set (resolved,
@@ -58,6 +51,17 @@ export function IncidentMap({ identity, incidents: source, fleet }: IncidentMapP
     selectedId !== null ? (incidents.find((i) => i.id === selectedId) ?? null) : null;
   const selectedUnit =
     selectedUnitId !== null ? (units.find((u) => u.id === selectedUnitId) ?? null) : null;
+
+  // Stable callbacks so the LeafletMap marker-diff effects don't re-run on
+  // every render and rebuild click handlers.
+  const handleIncidentClick = useCallback((id: string) => {
+    setSelectedId(id);
+    setSelectedUnitId(null);
+  }, []);
+  const handleUnitClick = useCallback((id: string) => {
+    setSelectedUnitId(id);
+    setSelectedId(null);
+  }, []);
 
   return (
     <Stack gap="24">
@@ -84,66 +88,12 @@ export function IncidentMap({ identity, incidents: source, fleet }: IncidentMapP
       </div>
 
       <div className={styles.layout}>
-        <div className={styles.canvas} data-testid="incident-map-canvas">
-          {located.map((incident) => {
-            if (incident.location === null) return null;
-            const point = project(incident.location);
-            const dispatched = incident.state === 'dispatched' || incident.state === 'enRoute';
-            return (
-              <button
-                key={incident.id}
-                type="button"
-                aria-label={`incident ${incident.title}`}
-                title={incident.title}
-                className={styles.marker({
-                  severity: severityVariant(incident.severity),
-                  selected: incident.id === selectedId,
-                })}
-                style={{ left: `${point.x * 100}%`, top: `${point.y * 100}%` }}
-                onClick={() => {
-                  setSelectedId(incident.id);
-                  setSelectedUnitId(null);
-                }}
-              >
-                {dispatched ? <span className={styles.dispatchedRing} /> : null}
-              </button>
-            );
-          })}
-
-          {locatedUnits.map((unit) => {
-            if (unit.location === null) return null;
-            const point = project(unit.location);
-            return (
-              <button
-                key={unit.id}
-                type="button"
-                aria-label={`unit ${unit.callsign}`}
-                title={unit.callsign}
-                className={styles.unitMarker({
-                  status: unit.status,
-                  selected: unit.id === selectedUnitId,
-                })}
-                style={{ left: `${point.x * 100}%`, top: `${point.y * 100}%` }}
-                onClick={() => {
-                  setSelectedUnitId(unit.id);
-                  setSelectedId(null);
-                }}
-              />
-            );
-          })}
-
-          {located.length === 0 && locatedUnits.length === 0 ? (
-            <div className={styles.canvasEmpty}>
-              {loading
-                ? 'loading map…'
-                : 'no located incidents or units — ones with a location appear here'}
-            </div>
-          ) : (
-            <span className={styles.canvasHint}>
-              central London · {located.length} incidents · {locatedUnits.length} units
-            </span>
-          )}
-        </div>
+        <LeafletMap
+          incidents={incidents}
+          units={units}
+          onIncidentClick={handleIncidentClick}
+          onUnitClick={handleUnitClick}
+        />
 
         <div className={styles.sidebar}>
           {selectedUnit !== null ? (
