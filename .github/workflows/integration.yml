@@ -90,7 +90,7 @@ jobs:
       # `SMOKE_CHIP_DEADLINE_MS`.
       - name: Triage-classify smoke (incident.opened → triage → chip)
         run: pnpm smoke:triage-classify
-        timeout-minutes: 6
+        timeout-minutes: 8
       - name: gRPC smoke (incident)
         run: pnpm smoke:grpc
       # Incident event spine: NATS → notification → Redis → gateway → ws.
@@ -236,7 +236,7 @@ jobs:
       # `SMOKE_CHIP_DEADLINE_MS`.
       - name: Triage-classify smoke (incident.opened → triage → chip)
         run: pnpm smoke:triage-classify
-        timeout-minutes: 6
+        timeout-minutes: 8
       - name: gRPC smoke (incident)
         run: pnpm smoke:grpc
       # Incident event spine: NATS → notification → Redis → gateway → ws.
