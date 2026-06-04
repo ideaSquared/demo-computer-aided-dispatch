@@ -1,5 +1,6 @@
 import {
   consumerOpts,
+  createInbox,
   type JetStreamSubscription,
   JSONCodec,
   type JsMsg,
@@ -176,10 +177,14 @@ export async function subscribeDurable<TSchema extends ZodTypeAny>(
   const maxDeliver = opts.maxDeliver ?? DEFAULT_MAX_DELIVER;
   const js = opts.nats.jetstream();
 
+  // NATS 2.14+ strict mode rejects push consumers without a deliverTo subject.
+  // Pull would also work, but push + a per-consumer inbox keeps the iterator
+  // shape of the consume loop unchanged.
   const builder = consumerOpts()
     .durable(opts.durableName)
     .ackExplicit()
     .deliverAll()
+    .deliverTo(createInbox())
     .maxDeliver(maxDeliver)
     .manualAck();
   if (opts.filterSubject !== undefined) {
