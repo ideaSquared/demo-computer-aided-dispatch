@@ -7,6 +7,7 @@ import type { Identity } from '../../presence/identity.js';
 import type { Incident, IncidentApi } from '../../services/incident.js';
 import type { Unit, UnitApi } from '../../services/units.js';
 import { IncidentMap } from '../IncidentMap.js';
+import { __leafletMocks } from './leafletMock.js';
 
 const identity: Identity = { operatorId: 'alex', displayName: 'Alex', tier: 'fire' };
 
@@ -76,10 +77,15 @@ function MapHarness({ api, unitApi }: { api: IncidentApi; unitApi?: UnitApi }) {
   return <IncidentMap identity={identity} incidents={incidents} fleet={fleet} />;
 }
 
-afterEach(cleanup);
+vi.mock('leaflet', async () => (await import('./leafletMock.js')).leafletMockModule);
+
+afterEach(() => {
+  cleanup();
+  __leafletMocks.reset();
+});
 
 describe('IncidentMap', () => {
-  it('renders a marker for each located incident', async () => {
+  it('adds a marker to the Leaflet layer for each located incident', async () => {
     const api = makeApi({
       list: vi.fn(async () => [
         makeIncident({ id: 'i1', title: 'fire one', location: { lat: 51.51, lng: -0.1 } }),
@@ -88,11 +94,12 @@ describe('IncidentMap', () => {
     });
     render(<MapHarness api={api} />);
 
-    expect(await screen.findByRole('button', { name: 'incident fire one' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'incident fire two' })).toBeInTheDocument();
+    await waitFor(() => expect(__leafletMocks.incidentMarkers().size).toBe(2));
+    expect(__leafletMocks.incidentMarkers().has('fire one')).toBe(true);
+    expect(__leafletMocks.incidentMarkers().has('fire two')).toBe(true);
   });
 
-  it('lists null-location incidents in the no-location sidebar, not on the canvas', async () => {
+  it('lists null-location incidents in the no-location sidebar, not on the map', async () => {
     const api = makeApi({
       list: vi.fn(async () => [
         makeIncident({ id: 'i1', title: 'mapped fire', location: { lat: 51.51, lng: -0.1 } }),
@@ -101,18 +108,13 @@ describe('IncidentMap', () => {
     });
     render(<MapHarness api={api} />);
 
-    await screen.findByRole('button', { name: 'incident mapped fire' });
-
-    // The unlocated incident has no canvas marker…
-    expect(
-      screen.queryByRole('button', { name: 'incident unmapped fire' }),
-    ).not.toBeInTheDocument();
-    // …but it does appear in the sidebar list and the count reflects it.
+    await waitFor(() => expect(__leafletMocks.incidentMarkers().size).toBe(1));
+    expect(__leafletMocks.incidentMarkers().has('mapped fire')).toBe(true);
     expect(screen.getByText('unmapped fire')).toBeInTheDocument();
     expect(screen.getByText('no location (1)')).toBeInTheDocument();
   });
 
-  it('surfaces the action panel when a marker is clicked', async () => {
+  it('surfaces the action panel when a marker click fires', async () => {
     const api = makeApi({
       list: vi.fn(async () => [
         makeIncident({ id: 'i1', title: 'fire one', location: { lat: 51.51, lng: -0.1 } }),
@@ -120,14 +122,12 @@ describe('IncidentMap', () => {
     });
     render(<MapHarness api={api} />);
 
-    const marker = await screen.findByRole('button', { name: 'incident fire one' });
-    // Before selection, the panel shows its empty prompt.
+    await waitFor(() => expect(__leafletMocks.incidentMarkers().size).toBe(1));
     expect(screen.getByText(/select a marker/i)).toBeInTheDocument();
 
-    fireEvent.click(marker);
+    __leafletMocks.clickIncidentMarker('fire one');
 
-    // The panel now shows the incident title (heading) and a triage control.
-    expect(screen.getByRole('heading', { name: 'fire one' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'fire one' })).toBeInTheDocument();
     expect(screen.getByLabelText('triage severity')).toBeInTheDocument();
   });
 
@@ -139,8 +139,11 @@ describe('IncidentMap', () => {
     });
     render(<MapHarness api={api} />);
 
-    fireEvent.click(await screen.findByRole('button', { name: 'incident fire one' }));
-    fireEvent.change(screen.getByLabelText('triage severity'), { target: { value: 'high' } });
+    await waitFor(() => expect(__leafletMocks.incidentMarkers().size).toBe(1));
+    __leafletMocks.clickIncidentMarker('fire one');
+    fireEvent.change(await screen.findByLabelText('triage severity'), {
+      target: { value: 'high' },
+    });
 
     await waitFor(() =>
       expect(api.triage).toHaveBeenCalledWith('i1', {
@@ -151,7 +154,7 @@ describe('IncidentMap', () => {
     );
   });
 
-  it('renders a marker for each locatable unit', async () => {
+  it('adds a marker to the Leaflet layer for each locatable unit', async () => {
     const api = makeApi({ list: vi.fn(async () => [] as ReadonlyArray<Incident>) });
     const unitApi = makeUnitApi({
       list: vi.fn(async () => [
@@ -161,11 +164,12 @@ describe('IncidentMap', () => {
     });
     render(<MapHarness api={api} unitApi={unitApi} />);
 
-    expect(await screen.findByRole('button', { name: 'unit Engine 7' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'unit Pump 2' })).toBeInTheDocument();
+    await waitFor(() => expect(__leafletMocks.unitMarkers().size).toBe(2));
+    expect(__leafletMocks.unitMarkers().has('Engine 7')).toBe(true);
+    expect(__leafletMocks.unitMarkers().has('Pump 2')).toBe(true);
   });
 
-  it('lists a null-location unit off-map, not on the canvas', async () => {
+  it('lists a null-location unit off-map, not on the map', async () => {
     const api = makeApi({ list: vi.fn(async () => [] as ReadonlyArray<Incident>) });
     const unitApi = makeUnitApi({
       list: vi.fn(async () => [
@@ -175,16 +179,13 @@ describe('IncidentMap', () => {
     });
     render(<MapHarness api={api} unitApi={unitApi} />);
 
-    await screen.findByRole('button', { name: 'unit Engine 7' });
-
-    // The off-map unit has no canvas marker…
-    expect(screen.queryByRole('button', { name: 'unit Medic 3' })).not.toBeInTheDocument();
-    // …but it appears in the off-map units list and the count reflects it.
+    await waitFor(() => expect(__leafletMocks.unitMarkers().size).toBe(1));
+    expect(__leafletMocks.unitMarkers().has('Engine 7')).toBe(true);
     expect(screen.getByText('Medic 3')).toBeInTheDocument();
     expect(screen.getByText('units off-map (1)')).toBeInTheDocument();
   });
 
-  it('shows a unit popover when its marker is clicked', async () => {
+  it('shows a unit popover when a unit marker click fires', async () => {
     const api = makeApi({ list: vi.fn(async () => [] as ReadonlyArray<Incident>) });
     const unitApi = makeUnitApi({
       list: vi.fn(async () => [
@@ -199,9 +200,10 @@ describe('IncidentMap', () => {
     });
     render(<MapHarness api={api} unitApi={unitApi} />);
 
-    fireEvent.click(await screen.findByRole('button', { name: 'unit Engine 7' }));
+    await waitFor(() => expect(__leafletMocks.unitMarkers().size).toBe(1));
+    __leafletMocks.clickUnitMarker('Engine 7');
 
-    expect(screen.getByRole('heading', { name: 'Engine 7' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Engine 7' })).toBeInTheDocument();
     expect(screen.getByText('i9')).toBeInTheDocument();
   });
 });
