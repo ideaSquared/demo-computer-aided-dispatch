@@ -23,7 +23,7 @@
     "clean": "rm -rf dist .turbo"
   },
   "dependencies": {
-    "ioredis": "^5.4.2"
+    "ioredis": "^5.11.1"
   },
   "devDependencies": {
     "@cad/tsconfig": "workspace:*",
