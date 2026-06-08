@@ -20,7 +20,7 @@
     "@cad/observability": "workspace:*",
     "@cad/proto": "workspace:*",
     "@cad/redis": "workspace:*",
-    "@casl/ability": "^6.7.3",
+    "@casl/ability": "^7.0.0",
     "@fastify/cookie": "^11.0.2",
     "@fastify/websocket": "^11.0.1",
     "@grpc/grpc-js": "^1.13.6",
