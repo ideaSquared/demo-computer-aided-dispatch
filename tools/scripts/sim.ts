@@ -33,7 +33,15 @@ type Severity = 'low' | 'medium' | 'high' | 'critical';
 const HOST = process.env.SIM_HOST ?? 'localhost';
 const PORT = Number(process.env.SIM_PORT ?? '5000');
 const BASE = `http://${HOST}:${PORT}`;
-const OSRM = process.env.SIM_OSRM ?? 'http://localhost:5055';
+/**
+ * 127.0.0.1, not `localhost`, and deliberately so. Docker publishes the OSRM
+ * port on IPv4; Node's fetch resolves `localhost` to ::1 first and the
+ * published port resets that connection rather than refusing it, so each
+ * attempt burns a 30s timeout instead of failing fast. curl hides this by
+ * falling back between address families. The gateway is a host process bound
+ * to both, which is why it can stay on `localhost`.
+ */
+const OSRM = process.env.SIM_OSRM ?? 'http://127.0.0.1:5055';
 
 const TICK_MS = Number(process.env.SIM_TICK_MS ?? '1000');
 /** Mean gap between new calls. Poisson, so the actual gaps vary a lot. */
@@ -44,6 +52,19 @@ const DWELL_MAX_MS = 180_000;
 /** Per unit, per tick. Keeps the fleet from being permanently ideal. */
 const OUT_OF_SERVICE_CHANCE = 1 / 2400;
 const BACK_IN_SERVICE_CHANCE = 1 / 240;
+
+/**
+ * How many units may be mid-request at once.
+ *
+ * Not a style preference — a tick without this fires the whole fleet
+ * simultaneously, and each unit costs two gRPC hops and three Postgres
+ * queries. Twenty units at once against a ten-connection pool per service
+ * produced `CONNECT_TIMEOUT` storms, and because a failed transition is
+ * retried on the next tick the stack never got a chance to drain. ADR-0004
+ * predicted the simulator would be the loudest client in the system; this is
+ * the throttle that keeps it a client rather than a load test.
+ */
+const MAX_CONCURRENT = Number(process.env.SIM_MAX_CONCURRENT ?? '4');
 
 /** Metres per second by tier — urban blue-light average, not a top speed. */
 const SPEED_MPS: Record<Tier, number> = { police: 13, medical: 12, fire: 10 };
@@ -152,6 +173,29 @@ function log(msg: string): void {
 }
 
 const pick = <T>(xs: readonly T[]): T => xs[Math.floor(Math.random() * xs.length)] as T;
+
+/**
+ * Run `work` over `items` with at most `limit` in flight. Deliberately tiny —
+ * a worker-pool over a shared cursor — because the alternative is a
+ * dependency, and `seed.ts` set the precedent that these scripts stay on
+ * Node's built-ins alone.
+ */
+async function mapLimit<T>(
+  items: readonly T[],
+  limit: number,
+  work: (item: T) => Promise<void>,
+): Promise<void> {
+  let cursor = 0;
+  const worker = async (): Promise<void> => {
+    for (;;) {
+      const index = cursor++;
+      const item = items[index];
+      if (item === undefined) return;
+      await work(item);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+}
 const between = (lo: number, hi: number): number => lo + Math.random() * (hi - lo);
 
 // --- geometry ---------------------------------------------------------------
@@ -476,9 +520,10 @@ async function main(): Promise<void> {
         await openIncident();
       }
 
-      // Units step concurrently: one slow route lookup shouldn't stall the
-      // rest of the fleet for a whole tick.
-      await Promise.all(fleet.map((u) => step(u, byId).catch(() => undefined)));
+      // Units step concurrently, but only a few at a time — see
+      // MAX_CONCURRENT. Enough that one slow route lookup doesn't stall the
+      // fleet, few enough that the stack isn't stampeded.
+      await mapLimit(fleet, MAX_CONCURRENT, (u) => step(u, byId).catch(() => undefined));
     } catch (err) {
       log(`tick failed: ${(err as Error).message}`);
     }

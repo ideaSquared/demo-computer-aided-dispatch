@@ -102,6 +102,15 @@ status write and then applied to both.
   ordering and concurrency bugs by volume. That is a feature, but it means a
   failing `pnpm sim` is not automatically a simulator bug — triage it as a
   system bug first.
+- **It needs a throttle to stay a client rather than a load test.** The first
+  run proved the point: stepping the whole fleet in one `Promise.all` put
+  twenty units in flight at once, each costing two gRPC hops and three
+  Postgres queries, and a ten-connection pool per service answered with
+  `CONNECT_TIMEOUT`. Because a failed transition retries on the next tick, the
+  stack never drained. `SIM_MAX_CONCURRENT` (default 4) bounds it. The real
+  inefficiency underneath is that the location route fetches the unit once at
+  the gateway for the CASL tier check and again in the service — worth
+  removing before the ping rate rises.
 - The London extract hardcodes a geography into dev tooling. The seed data is
   already London-flavoured and the schema stays terminology- and
   geography-agnostic, so this is consistent with where the flavour already
