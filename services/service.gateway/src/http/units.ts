@@ -111,6 +111,17 @@ const StatusBodySchema = z.object({
   changedBy: z.string().min(1).optional(),
 });
 
+/**
+ * Position telemetry (ADR-0003). No `expectedVersion` — position is
+ * last-write-wins and never conflicts with an in-flight status command.
+ * `recordedAt` is the device's sample time; it defaults to the gateway's
+ * clock for browser clients that have no better answer.
+ */
+const LocationBodySchema = z.object({
+  location: LocationSchema,
+  recordedAt: z.string().datetime().optional(),
+});
+
 const IdParamsSchema = z.object({ id: z.string().min(1) });
 
 const ListQuerySchema = z.object({
@@ -285,6 +296,66 @@ export function registerUnitRoutes(
       ).catch(() => {
         /* best-effort */
       });
+      return reply.send({ unit: toJson(res.unit) });
+    } catch (err) {
+      return replyError(reply, err);
+    }
+  });
+
+  /**
+   * Position telemetry. The path a mobile data terminal takes to report where
+   * it is — authenticated and CASL-gated like every other command, but
+   * deliberately unlike them in two ways (ADR-0003):
+   *
+   *   - it emits NO audit entry. The audit log records decisions and state
+   *     transitions; a 1 Hz position sample is neither, and writing them would
+   *     bury the entries that matter.
+   *   - it reuses the `setUnitStatus` ability rather than adding a verb. The
+   *     grant matrix is identical — a responder writes its own unit by id, a
+   *     dispatcher any unit in its tier — so a new action would be a synonym.
+   *
+   * PATCH, not POST: this is a partial update of an existing unit, and it is
+   * idempotent (replaying the same ping is a no-op the service drops on its
+   * `recordedAt` guard).
+   */
+  app.patch('/api/units/:id/location', async (req, reply) => {
+    const params = IdParamsSchema.safeParse(req.params);
+    if (!params.success) return replyValidation(reply, params.error);
+    const body = LocationBodySchema.safeParse(req.body);
+    if (!body.success) return replyValidation(reply, body.error);
+    // Same tier lookup the status route does, for the same reason: the CASL
+    // dispatcher rule matches on tier, so we can't gate without it. It costs
+    // a round trip per ping — worth revisiting if the ping rate ever makes it
+    // hurt, since the resource service re-checks the ability anyway.
+    let unitTier: WireTier | null;
+    try {
+      const existing = await client.getUnit({ id: params.data.id });
+      if (!existing.unit) throw new Error('resource service returned no unit');
+      unitTier = PROTO_TO_TIER[existing.unit.tier] ?? null;
+    } catch (err) {
+      return replyError(reply, err);
+    }
+    if (unitTier === null) {
+      return reply
+        .code(404)
+        .send({ error: { code: 'NOT_FOUND', message: `unit '${params.data.id}' not found` } });
+    }
+    const session = await requireAbility(req, reply, gate, 'setUnitStatus', {
+      kind: 'Unit',
+      tier: unitTier,
+      id: params.data.id,
+    });
+    if (!session) return reply;
+    try {
+      const res = await client.updateLocation(
+        {
+          id: params.data.id,
+          location: body.data.location,
+          recordedAt: body.data.recordedAt ?? new Date().toISOString(),
+        },
+        operatorMetadata(session),
+      );
+      if (!res.unit) throw new Error('resource service returned no unit');
       return reply.send({ unit: toJson(res.unit) });
     } catch (err) {
       return replyError(reply, err);

@@ -1,6 +1,10 @@
 import type { NatsConnection } from '@cad/events';
 import { subjects, subscribe, topicsFor } from '@cad/events';
-import { UnitRegisteredSchema, UnitStatusChangedSchema } from '@cad/events/resource';
+import {
+  UnitLocationUpdatedSchema,
+  UnitRegisteredSchema,
+  UnitStatusChangedSchema,
+} from '@cad/events/resource';
 import { withSpan } from '@cad/observability';
 import type { Redis } from '@cad/redis';
 import type { ZodTypeAny } from 'zod';
@@ -19,6 +23,10 @@ interface Ctx {
 const UNIT_FEEDS: ReadonlyArray<readonly [string, ZodTypeAny]> = [
   [subjects.UnitRegistered, UnitRegisteredSchema],
   [subjects.UnitStatusChanged, UnitStatusChangedSchema],
+  // Position telemetry rides the same topics as lifecycle (ADR-0003): the
+  // console reconciles a unit by id whatever moved it, so no client needs a
+  // separate subscription to see the fleet move.
+  [subjects.UnitLocationUpdated, UnitLocationUpdatedSchema],
 ];
 
 function fanout(ctx: Ctx, subject: string, schema: ZodTypeAny): Promise<void> {

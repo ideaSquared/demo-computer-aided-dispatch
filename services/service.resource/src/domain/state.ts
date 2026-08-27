@@ -1,5 +1,5 @@
 import { InvariantError } from './errors.js';
-import type { GeoPoint, ServiceTier, UnitEvent } from './events.js';
+import type { ServiceTier, UnitEvent } from './events.js';
 
 /**
  * Lifecycle states for a responder unit.
@@ -12,12 +12,20 @@ import type { GeoPoint, ServiceTier, UnitEvent } from './events.js';
  */
 export type UnitStatus = 'available' | 'dispatched' | 'enRoute' | 'onScene' | 'outOfService';
 
-/** Folded current state of a unit. `null` means "not yet registered". */
+/**
+ * Folded current state of a unit. `null` means "not yet registered".
+ *
+ * Note what is absent: `location`. A unit's current position is telemetry,
+ * held in `unit_positions` and overlaid on the read path — never folded from
+ * the log (ADR-0003). `UnitRegistered` still carries the point it was
+ * registered at, because that is a genuine historical fact, but it seeds the
+ * position table rather than becoming part of the folded state. Keeping it
+ * out of here is what guarantees one answer to "where is this unit now".
+ */
 export interface UnitState {
   status: UnitStatus;
   callsign: string;
   tier: ServiceTier;
-  location: GeoPoint | null;
   /** The incident the unit is assigned to, or null when available/out of service. */
   incidentId: string | null;
   registeredAt: string;
@@ -43,7 +51,6 @@ export function apply(state: UnitState | null, event: UnitEvent): UnitState {
       status: 'available',
       callsign: event.callsign,
       tier: event.tier,
-      location: event.location,
       incidentId: null,
       registeredAt: event.occurredAt,
       updatedAt: event.occurredAt,

@@ -41,8 +41,12 @@ export function topicsFor(subject: string, payload: unknown): string[] {
     }
     // Unit lifecycle mirrors incidents: a shared `units` scope topic (for the
     // fleet board) plus a `unit:<id>` topic (for a console watching one unit).
+    // `unit.locationUpdated` rides the same two topics on purpose: the
+    // console reconciles a unit by id regardless of what moved it, so
+    // telemetry needs no separate client-side path (ADR-0003).
     case subjects.UnitRegistered:
-    case subjects.UnitStatusChanged: {
+    case subjects.UnitStatusChanged:
+    case subjects.UnitLocationUpdated: {
       const p = payload as { unitId?: unknown };
       const unitId = typeof p.unitId === 'string' ? p.unitId : undefined;
       return unitId ? ['units', `unit:${unitId}`] : ['units'];

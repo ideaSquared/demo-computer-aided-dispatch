@@ -38,6 +38,7 @@ describe('topicsFor', () => {
   it.each([
     subjects.UnitRegistered,
     subjects.UnitStatusChanged,
+    subjects.UnitLocationUpdated,
   ])('maps %s to the units scope + a unit-scoped topic', (subject) => {
     expect(topicsFor(subject, { unitId: 'unit-42' })).toEqual(['units', 'unit:unit-42']);
   });

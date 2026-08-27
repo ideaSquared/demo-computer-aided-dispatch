@@ -88,6 +88,8 @@ export type {
   RegisterUnitRequest,
   RegisterUnitResponse,
   Unit,
+  UpdateLocationRequest,
+  UpdateLocationResponse,
   UpdateStatusRequest,
   UpdateStatusResponse,
 } from '../gen/ts/cad/resource/v1/resource.js';

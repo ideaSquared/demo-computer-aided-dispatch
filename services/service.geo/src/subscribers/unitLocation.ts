@@ -1,10 +1,14 @@
 import type { DbClient } from '@cad/db';
 import type { NatsConnection } from '@cad/events';
 import { subjects, subscribe } from '@cad/events';
-import type { UnitRegistered, UnitStatusChanged } from '@cad/events/resource';
-import { UnitRegisteredSchema, UnitStatusChangedSchema } from '@cad/events/resource';
+import type { UnitLocationUpdated, UnitRegistered, UnitStatusChanged } from '@cad/events/resource';
+import {
+  UnitLocationUpdatedSchema,
+  UnitRegisteredSchema,
+  UnitStatusChangedSchema,
+} from '@cad/events/resource';
 import { withSpan } from '@cad/observability';
-import { loadVersion, upsertPosition } from '../db/repository.js';
+import { loadVersion, movePosition, upsertPosition } from '../db/repository.js';
 
 type Logger = {
   info: (o: unknown, m?: string) => void;
@@ -84,6 +88,35 @@ export async function applyStatusChanged(
 }
 
 /**
+ * Apply a `unit.locationUpdated` ping to the geo read-model.
+ *
+ * Note what's missing compared to its two siblings: no `loadVersion` call and
+ * no skew-skip, because telemetry has no aggregate version (ADR-0003). The
+ * ordering guard lives in the SQL instead, comparing sample times.
+ *
+ * This is the event that makes NearestK answer the question dispatch actually
+ * asks. Before it existed, geo ranked candidates by where each unit was
+ * registered.
+ */
+export async function applyLocationUpdated(
+  db: DbClient,
+  log: Logger,
+  event: UnitLocationUpdated,
+): Promise<void> {
+  const moved = await movePosition(db, {
+    unitId: event.unitId,
+    location: event.location,
+    occurredAt: event.occurredAt,
+  });
+  if (!moved) {
+    log.info(
+      { unitId: event.unitId, occurredAt: event.occurredAt },
+      'geo: skipping stale or unknown unit.locationUpdated',
+    );
+  }
+}
+
+/**
  * Geo's denormalised view of the fleet: react to `unit.registered`
  * (location and tier supplied) and `unit.statusChanged` (status + version
  * supplied) so the unit_positions table is always within one event of
@@ -142,7 +175,27 @@ export function subscribeUnitLocation(ctx: Ctx): Promise<void> {
       }),
   );
 
-  // Both subscriptions are long-running NATS drains. Await both promises
-  // so the server-level `void subscriberLoop.catch(...)` covers either.
-  return Promise.all([registered, statusChanged]).then(() => undefined);
+  const locationUpdated = subscribe(
+    { nats: ctx.nats },
+    subjects.UnitLocationUpdated,
+    UnitLocationUpdatedSchema,
+    (event) =>
+      withSpan('geo.subscriber.upsertPosition', async (span) => {
+        span.setAttribute('unit.id', event.unitId);
+        span.setAttribute('unit.tier', event.tier);
+        span.setAttribute('event.subject', subjects.UnitLocationUpdated);
+        try {
+          await applyLocationUpdated(ctx.db, ctx.log, event);
+        } catch (err) {
+          ctx.log.error(
+            { unitId: event.unitId, err: String(err) },
+            'geo: unit.locationUpdated move failed',
+          );
+        }
+      }),
+  );
+
+  // All three subscriptions are long-running NATS drains. Await every promise
+  // so the server-level `void subscriberLoop.catch(...)` covers any of them.
+  return Promise.all([registered, statusChanged, locationUpdated]).then(() => undefined);
 }

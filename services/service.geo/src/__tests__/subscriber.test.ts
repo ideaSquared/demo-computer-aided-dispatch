@@ -1,7 +1,11 @@
-import type { UnitRegistered, UnitStatusChanged } from '@cad/events/resource';
+import type { UnitLocationUpdated, UnitRegistered, UnitStatusChanged } from '@cad/events/resource';
 import { describe, expect, it, vi } from 'vitest';
 import * as repo from '../db/repository.js';
-import { applyRegistered, applyStatusChanged } from '../subscribers/unitLocation.js';
+import {
+  applyLocationUpdated,
+  applyRegistered,
+  applyStatusChanged,
+} from '../subscribers/unitLocation.js';
 
 // The subscriber only needs `db` and `log` — the NATS leg is exercised in
 // the smoke test. We hand it a stub DbClient (never called directly) and
@@ -118,5 +122,48 @@ describe('geo subscriber — applyStatusChanged', () => {
 
     loadVersion.mockRestore();
     upsertPosition.mockRestore();
+  });
+});
+
+const baseLocationUpdated: UnitLocationUpdated = {
+  eventId: '00000000-0000-0000-0000-000000000003',
+  occurredAt: '2026-06-03T10:02:00.000Z',
+  idempotencyKey: 'unit:u-1:pos:2026-06-03T10:02:00.000Z',
+  unitId: '11111111-1111-1111-1111-111111111111',
+  tier: 'fire',
+  location: { lat: 51.52, lng: -0.09 },
+};
+
+describe('geo subscriber — applyLocationUpdated', () => {
+  it('moves the unit to the reported point', async () => {
+    const movePosition = vi.spyOn(repo, 'movePosition').mockResolvedValue(true);
+
+    await applyLocationUpdated(fakeDb, fakeLog, baseLocationUpdated);
+
+    expect(movePosition).toHaveBeenCalledWith(fakeDb, {
+      unitId: baseLocationUpdated.unitId,
+      location: { lat: 51.52, lng: -0.09 },
+      occurredAt: baseLocationUpdated.occurredAt,
+    });
+  });
+
+  it('never reads a version — telemetry has none to skew-skip on', async () => {
+    // The guard for ADR-0003. If this starts calling loadVersion, someone has
+    // put position back on the aggregate and the two paths have re-coupled.
+    const loadVersion = vi.spyOn(repo, 'loadVersion');
+    vi.spyOn(repo, 'movePosition').mockResolvedValue(true);
+
+    await applyLocationUpdated(fakeDb, fakeLog, baseLocationUpdated);
+
+    expect(loadVersion).not.toHaveBeenCalled();
+  });
+
+  it('logs and swallows a ping the SQL guard rejected as stale or unknown', async () => {
+    vi.spyOn(repo, 'movePosition').mockResolvedValue(false);
+
+    await expect(
+      applyLocationUpdated(fakeDb, fakeLog, baseLocationUpdated),
+    ).resolves.toBeUndefined();
+    expect(fakeLog.info).toHaveBeenCalled();
   });
 });

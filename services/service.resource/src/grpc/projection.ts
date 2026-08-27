@@ -1,5 +1,5 @@
 import { ResourceV1, type Unit } from '@cad/proto';
-import type { ServiceTier, UnitState, UnitStatus } from '../domain/index.js';
+import type { GeoPoint, ServiceTier, UnitState, UnitStatus } from '../domain/index.js';
 
 /**
  * Pure mapping from the domain's `UnitState` to the proto's `Unit` message.
@@ -22,14 +22,25 @@ const TIER_TO_PROTO: Record<ServiceTier, ResourceV1.ServiceTier> = {
   fire: ResourceV1.ServiceTier.FIRE,
 };
 
-export function toProtoUnit(id: string, state: UnitState, version: number): Unit {
+/**
+ * `location` is passed in rather than read off `state`: position is telemetry
+ * from `unit_positions`, not part of the folded aggregate (ADR-0003). Callers
+ * that don't have a position to hand pass `null`, which is the same wire
+ * shape a unit has always had before its first ping.
+ */
+export function toProtoUnit(
+  id: string,
+  state: UnitState,
+  version: number,
+  location: GeoPoint | null,
+): Unit {
   return {
     id,
     callsign: state.callsign,
     tier: TIER_TO_PROTO[state.tier],
     status: STATUS_TO_PROTO[state.status],
     incidentId: state.incidentId ?? '',
-    location: state.location ? { lat: state.location.lat, lng: state.location.lng } : undefined,
+    location: location ? { lat: location.lat, lng: location.lng } : undefined,
     updatedAt: state.updatedAt,
     version,
   };

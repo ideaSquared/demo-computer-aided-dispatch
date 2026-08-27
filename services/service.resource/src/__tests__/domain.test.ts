@@ -42,16 +42,24 @@ describe('apply / fold', () => {
       status: 'available',
       callsign: 'E-12',
       tier: 'fire',
-      location: { lat: 51.5074, lng: -0.1278 },
       incidentId: null,
       registeredAt: T0,
       updatedAt: T0,
     });
   });
 
+  it('keeps the registration point in the event but out of the folded state', () => {
+    // ADR-0003: position is telemetry. The registration point is a genuine
+    // historical fact so it stays on the event (and seeds `unit_positions`),
+    // but folding must not resurrect it as current state — otherwise there
+    // are two answers to "where is this unit now".
+    const [event] = register(null, registerInput);
+    expect(event).toMatchObject({ location: { lat: 51.5074, lng: -0.1278 } });
+    expect(fold(register(null, registerInput))).not.toHaveProperty('location');
+  });
+
   it('registers a unit with no known location', () => {
-    const state = fold(register(null, { ...registerInput, location: null }));
-    expect(state?.location).toBeNull();
+    expect(() => fold(register(null, { ...registerInput, location: null }))).not.toThrow();
   });
 
   it('folds a full available→dispatched→enRoute→onScene→available lifecycle', () => {
