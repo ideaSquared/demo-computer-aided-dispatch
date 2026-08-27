@@ -6,7 +6,9 @@ version: v2
 # `protoc-gen-python` invocation lands here, sandboxed via service.triage's
 # Python toolchain (the Node workspace shouldn't pull pip deps).
 plugins:
-  - local: node_modules/.bin/protoc-gen-ts_proto
+  # Invoked via node so the same config works on Windows, where the
+  # extensionless .bin shim is not executable.
+  - local: ["node", "node_modules/ts-proto/protoc-gen-ts_proto"]
     out: gen/ts
     opt:
       - esModuleInterop=true

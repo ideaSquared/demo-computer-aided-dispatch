@@ -20,8 +20,8 @@ Stub. HTTP `/health` only. Boot-proven by `pnpm smoke`. Domain logic, gRPC handl
 
 ```bash
 pnpm dev:deps                                # Postgres + Redis + NATS + Jaeger
-pnpm --filter @cad/service.resource dev         # watch mode (tsx), port 5040
-curl http://localhost:5040/health           # → { "status": "ok" }
+pnpm --filter @cad/service.resource dev         # watch mode (tsx), port 5042
+curl http://localhost:5042/health           # → { "status": "ok" }
 ```
 
 ## Build
