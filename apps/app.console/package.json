@@ -27,13 +27,13 @@
     "@cad/tsconfig": "workspace:*",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
-    "@types/leaflet": "^1.9.21",
+    "@types/leaflet": "^1.9.22",
     "@types/react": "^19.2.16",
     "@types/react-dom": "^19.2.3",
     "@vanilla-extract/vite-plugin": "^5.2.2",
     "@vitejs/plugin-react": "^5.2.0",
     "jsdom": "^29.1.1",
-    "typescript": "^6.0.3",
+    "typescript": "^7.0.2",
     "vite": "^7.3.5",
     "vitest": "^4.1.8"
   }
