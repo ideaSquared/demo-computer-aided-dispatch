@@ -353,9 +353,11 @@ async function openIncident(): Promise<void> {
       expectedVersion: triaged.version,
       dispatchedBy: 'sim',
     });
-    log(
-      `${severity} ${tier} call -> ${chosen.unit.callsign} (${Math.round(chosen.distanceMeters)}m): ${title}`,
-    );
+    // A geo-backed recommendation carries no callsign by design — geo stores
+    // tier, status and position, not names — so fall back to a short id, the
+    // same thing the console does.
+    const who = chosen.unit.callsign || chosen.unit.id.slice(0, 8);
+    log(`${severity} ${tier} call -> ${who} (${Math.round(chosen.distanceMeters)}m): ${title}`);
   } catch (err) {
     // A dispatcher who got to the incident first, or a unit that went busy
     // between the recommendation and the dispatch. Ordinary contention: skip

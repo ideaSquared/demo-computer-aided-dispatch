@@ -368,28 +368,19 @@ export function registerUnitRoutes(
     if (!params.success) return replyValidation(reply, params.error);
     const body = LocationBodySchema.safeParse(req.body);
     if (!body.success) return replyValidation(reply, body.error);
-    // Same tier lookup the status route does, for the same reason: the CASL
-    // dispatcher rule matches on tier, so we can't gate without it. It costs
-    // a round trip per ping — worth revisiting if the ping rate ever makes it
-    // hurt, since the resource service re-checks the ability anyway.
-    let unitTier: WireTier | null;
-    try {
-      const existing = await client.getUnit({ id: params.data.id });
-      if (!existing.unit) throw new Error('resource service returned no unit');
-      unitTier = PROTO_TO_TIER[existing.unit.tier] ?? null;
-    } catch (err) {
-      return replyError(reply, err);
-    }
-    if (unitTier === null) {
-      return reply
-        .code(404)
-        .send({ error: { code: 'NOT_FOUND', message: `unit '${params.data.id}' not found` } });
-    }
-    const session = await requireAbility(req, reply, gate, 'setUnitStatus', {
-      kind: 'Unit',
-      tier: unitTier,
-      id: params.data.id,
-    });
+    // Coarse check at the edge, authoritative check at the owner.
+    //
+    // The status route fetches the unit first so it can gate on the exact
+    // tier, and pays a round trip for it. On a 1 Hz telemetry path that
+    // doubles the cost of every ping — a gRPC hop and a Postgres read purely
+    // to decide something the resource service decides again anyway, with the
+    // same operator metadata and a unit it has already loaded.
+    //
+    // A conditionless subject is CASL's "any rule for this type" form (see
+    // requireAbility), so this still authenticates, still runs the CSRF gate,
+    // and still refuses an operator with no `setUnitStatus` right at all. The
+    // tier- and id-scoped decision belongs to the service, which makes it.
+    const session = await requireAbility(req, reply, gate, 'setUnitStatus', { kind: 'Unit' });
     if (!session) return reply;
     try {
       const res = await client.updateLocation(

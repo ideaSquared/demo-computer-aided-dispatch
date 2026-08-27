@@ -311,6 +311,7 @@ It's the only Python in the repo; everything else is TypeScript.
 | `EPERM ... open 'C:\Program Files\nodejs\pnpx'` on `corepack enable` | corepack writing shims into an elevated dir | Use `npm install -g pnpm@11.5.1`, or run the terminal as admin. See [Windows](#windows). |
 | `This version of pnpm requires at least Node.js v22.13` | Node < 22 | Upgrade to Node 22 LTS. |
 | `ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION` | Editing deps with a stricter pnpm policy than the repo's | The repo already sets `minimumReleaseAge: 0`; make sure you didn't override it in a user-level `.npmrc`. |
+| `write CONNECT_TIMEOUT localhost:5432` under load | `localhost` resolved to ::1; Docker publishes on IPv4 and the v6 path hangs then resets | Use `127.0.0.1` in `DATABASE_URL`/`REDIS_URL`/`NATS_URL` — `.env.example` already does. Only bites once something drives real concurrency, e.g. `pnpm sim`. |
 | `pnpm dev` → port already allocated | Another project's Compose stack is on 5432/6379/4222/16686 | `pnpm dev` names the container holding the port — `docker stop <name>`, then re-run. |
 | `pnpm dev` → "these ports are taken" | A previous `pnpm dev` didn't shut down | Close it. Windows also reserves 5040 (CDPSvc), which is why service.resource serves HTTP on 5042. |
 | `pnpm smoke` → `NOT_SERVING` for everything | Deps/services not up, or probing too early | Ensure `pnpm dev:deps` + services are running; smoke retries for 60s per service. |

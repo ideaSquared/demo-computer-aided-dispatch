@@ -288,7 +288,31 @@ async function main(): Promise<void> {
   const firstUnitByTier: Partial<Record<Tier, string>> = {};
   const callsignOf = new Map<string, string>();
   let units = 0;
+
+  // Callsigns already on the stack. Registration has no natural key — the
+  // server mints a uuid per call — so re-running the seed used to give you a
+  // second "Pump Ladder 3" with a different id, and nothing downstream can
+  // tell the two apart. Skipping known callsigns makes `pnpm seed` safe to
+  // re-run, which the operator half of this script has always been.
+  const existingUnits = new Map<string, UnitRow>();
+  try {
+    const { units: live } = await api<{ units: UnitRow[] }>('GET', '/api/units');
+    for (const u of live) existingUnits.set(u.callsign, u);
+  } catch (err) {
+    // Non-fatal: worst case we register duplicates, exactly as before.
+    console.error(`  ! could not list units, duplicate check off: ${(err as Error).message}`);
+  }
+
   for (const u of UNITS) {
+    const already = existingUnits.get(u.callsign);
+    if (already) {
+      pool[u.tier].push(already.id);
+      if (firstUnitByTier[u.tier] === undefined) firstUnitByTier[u.tier] = already.id;
+      callsignOf.set(already.id, u.callsign);
+      units += 1;
+      console.log(`  = unit  ${u.tier.padEnd(7)} ${u.callsign} (already registered)`);
+      continue;
+    }
     try {
       const { unit } = await api<{ unit: UnitRow }>('POST', '/api/units', {
         callsign: u.callsign,

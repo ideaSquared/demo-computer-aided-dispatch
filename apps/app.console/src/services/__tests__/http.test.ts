@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import { authedFetch, onUnauthorizedResponse } from '../http.js';
 
 /**
@@ -15,12 +15,12 @@ function res(status: number): Response {
 
 describe('authedFetch', () => {
   const fetchMock = vi.fn();
-  let unauthorized: ReturnType<typeof vi.fn>;
+  let unauthorized: Mock<() => void>;
 
   beforeEach(() => {
     fetchMock.mockReset();
     vi.stubGlobal('fetch', fetchMock);
-    unauthorized = vi.fn();
+    unauthorized = vi.fn<() => void>();
     onUnauthorizedResponse(unauthorized);
     document.cookie = 'cad_csrf=csrf-1';
   });
