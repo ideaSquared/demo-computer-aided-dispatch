@@ -38,7 +38,12 @@ import {
   triage,
 } from '../domain/index.js';
 import { ensureAllowed, readOperatorContext } from './operator.js';
-import { fromProtoSeverity, fromProtoTier, toProtoIncident } from './projection.js';
+import {
+  fromProtoSeverity,
+  fromProtoTier,
+  toProtoHistoryEntry,
+  toProtoIncident,
+} from './projection.js';
 
 interface Deps {
   db: DbClient;
@@ -467,6 +472,34 @@ export function createHandlers(deps: Deps): IncidentV1.IncidentServiceServer {
           }
           callback(null, {
             incident: toProtoIncident(row.id, row.state, row.version, row.ai_suggestion),
+          });
+        } catch (err) {
+          callback(mapError(err), null);
+        }
+      })();
+    },
+
+    /**
+     * The incident's timeline (ADR-0006). A pure read of the event log — no
+     * fold, no command, no write. Versions are contiguous from 1 per
+     * aggregate (the (aggregate_id, version) primary key guarantees it), so
+     * the index is the version the event produced.
+     *
+     * No pagination: an incident accumulates a handful of events, not
+     * thousands. A major incident with many dispatched units is the case to
+     * watch if that assumption ever stops holding.
+     */
+    getHistory: (call, callback) => {
+      void (async () => {
+        try {
+          const { events } = await loadEvents(deps.db, call.request.id);
+          if (events.length === 0) {
+            throw Object.assign(new Error(`incident '${call.request.id}' not found`), {
+              code: grpc.status.NOT_FOUND,
+            });
+          }
+          callback(null, {
+            entries: events.map((event, i) => toProtoHistoryEntry(event, i + 1)),
           });
         } catch (err) {
           callback(mapError(err), null);

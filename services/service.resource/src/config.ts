@@ -24,7 +24,12 @@ export const config = loadEnv(
       .optional()
       .transform((v) => v === 'true' || v === '1'),
     NATS_URL: z.string().url().default('nats://localhost:4222'),
+    // Optional: with it unset the service still runs, but position trails
+    // (ADR-0005) are disabled — writes skip and GetTrack fails loudly rather
+    // than returning an empty trail that reads as "this unit hasn't moved".
     REDIS_URL: z.string().url().optional(),
+    /** Rolling window of position history kept per unit. Default 30 minutes. */
+    TRACK_WINDOW_MS: z.coerce.number().int().positive().default(1_800_000),
     OTEL_EXPORTER_OTLP_ENDPOINT: z.string().url().optional(),
   }),
 );

@@ -70,3 +70,17 @@ export const unitMarker = recipe({
   },
   defaultVariants: { tier: 'police' },
 });
+
+/**
+ * The breadcrumb behind the selected unit (ADR-0005). Leaflet writes SVG
+ * stroke attributes, so the colour has to come through a class rather than
+ * its `color` option — which is what keeps the value on a `vars.*` token
+ * instead of a hex literal.
+ */
+export const trailLine = style({
+  stroke: vars.colors.intent.info,
+  strokeWidth: 3,
+  strokeOpacity: 0.7,
+  fill: 'none',
+  pointerEvents: 'none',
+});

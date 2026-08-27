@@ -776,6 +776,9 @@ importers:
       '@cad/proto':
         specifier: workspace:*
         version: link:../../packages/proto
+      '@cad/redis':
+        specifier: workspace:*
+        version: link:../../packages/redis
       '@grpc/grpc-js':
         specifier: ^1.13.6
         version: 1.14.4

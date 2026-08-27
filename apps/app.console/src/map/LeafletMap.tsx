@@ -20,6 +20,12 @@ export interface LeafletMapProps {
   readonly units: ReadonlyArray<Unit>;
   readonly onIncidentClick: (id: string) => void;
   readonly onUnitClick: (id: string) => void;
+  /**
+   * Breadcrumb for the selected unit, oldest first (ADR-0005). Empty when
+   * nothing is selected, when the unit hasn't moved, or when trails are
+   * switched off server-side — all three legitimately draw nothing.
+   */
+  readonly trail?: ReadonlyArray<{ readonly lat: number; readonly lng: number }>;
 }
 
 /**
@@ -27,13 +33,20 @@ export interface LeafletMapProps {
  * ref and is created exactly once; props drive marker diffs through layer
  * groups so we don't churn the DOM on every render.
  */
-export function LeafletMap({ incidents, units, onIncidentClick, onUnitClick }: LeafletMapProps) {
+export function LeafletMap({
+  incidents,
+  units,
+  onIncidentClick,
+  onUnitClick,
+  trail = [],
+}: LeafletMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
   const incidentLayerRef = useRef<L.LayerGroup | null>(null);
   const unitLayerRef = useRef<L.LayerGroup | null>(null);
   const incidentMarkersRef = useRef<Map<string, L.Marker>>(new Map());
   const unitMarkersRef = useRef<Map<string, L.Marker>>(new Map());
+  const trailLayerRef = useRef<L.LayerGroup | null>(null);
   const hasFittedRef = useRef(false);
 
   // Mount once: create the map, the tile layer, and two empty layer groups.
@@ -42,14 +55,18 @@ export function LeafletMap({ incidents, units, onIncidentClick, onUnitClick }: L
     if (containerRef.current === null) return;
     const map = L.map(containerRef.current).setView(LONDON_CENTER, LONDON_ZOOM);
     L.tileLayer(OSM_URL, { attribution: OSM_ATTRIBUTION }).addTo(map);
+    // Trail goes on first so markers sit above the line rather than under it.
+    const trailLayer = L.layerGroup().addTo(map);
     const incidentLayer = L.layerGroup().addTo(map);
     const unitLayer = L.layerGroup().addTo(map);
     mapRef.current = map;
+    trailLayerRef.current = trailLayer;
     incidentLayerRef.current = incidentLayer;
     unitLayerRef.current = unitLayer;
     return () => {
       map.remove();
       mapRef.current = null;
+      trailLayerRef.current = null;
       incidentLayerRef.current = null;
       unitLayerRef.current = null;
       incidentMarkersRef.current.clear();
@@ -122,6 +139,21 @@ export function LeafletMap({ incidents, units, onIncidentClick, onUnitClick }: L
     }
     unitMarkersRef.current = next;
   }, [units, onUnitClick]);
+
+  // The trail is one polyline that changes wholesale on every tick, so a
+  // clear-and-redraw is both simpler and cheaper than diffing vertices.
+  useEffect(() => {
+    const layer = trailLayerRef.current;
+    if (layer === null) return;
+    layer.clearLayers();
+    if (trail.length < 2) return;
+    // Styling rides a class, not Leaflet's `color` option, so the value
+    // stays a `vars.*` token in the css.ts module.
+    L.polyline(
+      trail.map((p) => [p.lat, p.lng] as L.LatLngTuple),
+      { className: styles.trailLine },
+    ).addTo(layer);
+  }, [trail]);
 
   // On first paint that has > 1 marker, frame everything. After that the
   // operator owns the viewport — don't yank it back on every delta.

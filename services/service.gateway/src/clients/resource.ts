@@ -1,4 +1,6 @@
 import type {
+  GetTrackRequest,
+  GetTrackResponse,
   GetUnitRequest,
   GetUnitResponse,
   ListUnitsRequest,
@@ -27,6 +29,7 @@ export interface ResourceClient {
   listUnits(req: ListUnitsRequest, md?: grpc.Metadata): Promise<ListUnitsResponse>;
   updateStatus(req: UpdateStatusRequest, md?: grpc.Metadata): Promise<UpdateStatusResponse>;
   updateLocation(req: UpdateLocationRequest, md?: grpc.Metadata): Promise<UpdateLocationResponse>;
+  getTrack(req: GetTrackRequest, md?: grpc.Metadata): Promise<GetTrackResponse>;
   close(): void;
 }
 
@@ -57,6 +60,7 @@ export function createResourceClient(url: string): ResourceClient {
       call<UpdateStatusRequest, UpdateStatusResponse>(client.updateStatus, req, md),
     updateLocation: (req, md) =>
       call<UpdateLocationRequest, UpdateLocationResponse>(client.updateLocation, req, md),
+    getTrack: (req, md) => call<GetTrackRequest, GetTrackResponse>(client.getTrack, req, md),
     close: () => client.close(),
   };
 }

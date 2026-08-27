@@ -10,6 +10,7 @@ import {
 } from '@cad/events/resource';
 import { subject as caslSubject, PermissionDeniedError } from '@cad/lib.authz';
 import { ResourceV1 } from '@cad/proto';
+import type { Redis } from '@cad/redis';
 import * as grpc from '@grpc/grpc-js';
 import {
   appendAndProject,
@@ -35,12 +36,21 @@ import {
   type UnitEvent,
   type UnitState,
 } from '../domain/index.js';
+import { appendTrack, readTrack } from '../track.js';
 import { ensureAllowed, readOperatorContext } from './operator.js';
 import { fromProtoStatus, fromProtoTier, toProtoUnit } from './projection.js';
 
 interface Deps {
   db: DbClient;
   nats: NatsConnection;
+  /**
+   * Optional: position trails (ADR-0005) are disabled when it's absent. The
+   * service is fully functional without it — only `GetTrack` stops working,
+   * and it says so rather than answering with an empty trail.
+   */
+  redis?: Redis | undefined;
+  /** Rolling window kept per unit. Only meaningful when `redis` is set. */
+  trackWindowMs?: number | undefined;
   /** Override for tests. Production uses `Date.now()` + `randomUUID()`. */
   now?: () => string;
   newId?: () => string;
@@ -308,6 +318,55 @@ export function createHandlers(deps: Deps): ResourceV1.ResourceServiceServer {
     },
 
     /**
+     * A unit's recent position trail (ADR-0005). Read-only, and read from
+     * Redis rather than Postgres because the data lives for half an hour.
+     *
+     * With no Redis configured this fails rather than returning an empty
+     * list: an empty trail and a disabled feature look identical on a map,
+     * and only one of them means "this unit hasn't moved".
+     */
+    getTrack: (call, callback) => {
+      void (async () => {
+        try {
+          if (!deps.redis) {
+            // UNAVAILABLE, not FAILED_PRECONDITION: nothing about the request
+            // is wrong, the capability just isn't switched on here. The
+            // gateway turns it into a 503.
+            throw Object.assign(
+              new Error('track history is unavailable: REDIS_URL is not configured'),
+              { code: grpc.status.UNAVAILABLE },
+            );
+          }
+          const row = await loadView(deps.db, call.request.id);
+          if (!row) {
+            throw Object.assign(new Error(`unit '${call.request.id}' not found`), {
+              code: grpc.status.NOT_FOUND,
+            });
+          }
+          ensureAllowed(
+            readOperatorContext(call.metadata),
+            'view',
+            caslSubject('Unit', { id: call.request.id, tier: row.state.tier }),
+          );
+          const sinceMs = Number(call.request.sinceMs);
+          const untilMs = Number(call.request.untilMs);
+          const points = await readTrack(deps.redis, {
+            unitId: call.request.id,
+            // 0 is proto3's default for an unset int64, and no caller means
+            // "the epoch" — so treat it as open-ended.
+            since: sinceMs > 0 ? sinceMs : undefined,
+            until: untilMs > 0 ? untilMs : undefined,
+          });
+          callback(null, {
+            points: points.map((p) => ({ location: p.location, recordedAt: p.recordedAt })),
+          });
+        } catch (err) {
+          callback(mapError(err), null);
+        }
+      })();
+    },
+
+    /**
      * Position telemetry (ADR-0003). Deliberately NOT shaped like the other
      * write handlers: no event log, no fold, no version. It loads the unit
      * only to authorise the write and to answer with a complete `Unit`.
@@ -346,6 +405,17 @@ export function createHandlers(deps: Deps): ResourceV1.ResourceServiceServer {
             recordedAt,
           });
           if (applied) {
+            // Same branch as the publish, deliberately: a ping that lost the
+            // recorded_at guard must not enter the trail either, or the
+            // breadcrumb could show a point the unit's position never was.
+            if (deps.redis) {
+              await appendTrack(deps.redis, {
+                unitId: id,
+                location: point,
+                recordedAt,
+                windowMs: deps.trackWindowMs ?? 1_800_000,
+              });
+            }
             await publish(deps, subjects.UnitLocationUpdated, UnitLocationUpdatedSchema, {
               eventId: newId(),
               occurredAt: recordedAt,

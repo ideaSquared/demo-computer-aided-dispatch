@@ -24,6 +24,11 @@ service IncidentService {
   rpc DeclareMajor(DeclareMajorRequest) returns (DeclareMajorResponse);
   rpc Get(GetRequest) returns (GetResponse);
   rpc ListOpen(ListOpenRequest) returns (ListOpenResponse);
+  // The incident's own event log, oldest first — the timeline an operator
+  // sees on a call. A read: no fold, no command. This makes the log part of
+  // the public contract, so domain event renames are absorbed by the mapping
+  // layer below rather than leaking to clients. See ADR-0006.
+  rpc GetHistory(GetHistoryRequest) returns (GetHistoryResponse);
 }
 
 // ---- requests --------------------------------------------------------------
@@ -78,6 +83,10 @@ message GetRequest {
   string id = 1;
 }
 
+message GetHistoryRequest {
+  string id = 1;
+}
+
 message ListOpenRequest {
   // Optional tier filter — empty/UNSPECIFIED returns every open incident.
   ServiceTier tier = 1;
@@ -124,6 +133,28 @@ message ListOpenResponse {
 
 // ---- domain shape ----------------------------------------------------------
 
+message GetHistoryResponse {
+  repeated IncidentHistoryEntry entries = 1;  // oldest first.
+}
+
+// One entry in an incident's timeline. The detail fields are type-specific
+// and only the ones that type carries are set — `severity` for a triage,
+// `unit_ids` for a dispatch, and so on. Flat rather than a oneof to match the
+// optional-field style `Incident` already uses.
+message IncidentHistoryEntry {
+  IncidentEventType type = 1;
+  string occurred_at = 2;   // RFC3339.
+  int64 version = 3;        // the aggregate version this event produced.
+  // The operator who caused it. EMPTY for a system-driven transition: a unit
+  // reporting en route or on scene moves the incident without an operator
+  // touching it, and the timeline should say so rather than invent an actor.
+  string actor = 4;
+  Severity severity = 5;         // TRIAGED
+  repeated string unit_ids = 6;  // DISPATCHED
+  string unit_id = 7;            // EN_ROUTE, UNIT_ARRIVED
+  string reason = 8;             // CANCELLED
+}
+
 message Incident {
   string id = 1;
   string title = 2;
@@ -159,6 +190,20 @@ message AiTriageSuggestion {
 }
 
 // ---- enums -----------------------------------------------------------------
+
+// The aggregate's event vocabulary, mapped at the gRPC boundary so the
+// domain's internal type names stay refactorable (ADR-0006).
+enum IncidentEventType {
+  INCIDENT_EVENT_TYPE_UNSPECIFIED = 0;
+  INCIDENT_EVENT_TYPE_OPENED = 1;
+  INCIDENT_EVENT_TYPE_TRIAGED = 2;
+  INCIDENT_EVENT_TYPE_DISPATCHED = 3;
+  INCIDENT_EVENT_TYPE_EN_ROUTE = 4;
+  INCIDENT_EVENT_TYPE_UNIT_ARRIVED = 5;
+  INCIDENT_EVENT_TYPE_RESOLVED = 6;
+  INCIDENT_EVENT_TYPE_CANCELLED = 7;
+  INCIDENT_EVENT_TYPE_MAJOR_DECLARED = 8;
+}
 
 enum ServiceTier {
   SERVICE_TIER_UNSPECIFIED = 0;

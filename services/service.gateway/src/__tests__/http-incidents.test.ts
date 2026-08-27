@@ -93,6 +93,7 @@ function makeApp(opts: MakeAppOpts = {}): FastifyInstance {
     cancel: async () => ({ incident: baseIncident() }),
     declareMajor: async () => ({ incident: baseIncident({ major: true }) }),
     get: async () => ({ incident: baseIncident() }),
+    getHistory: async () => ({ entries: [] }),
     listOpen: async () => ({ incidents: [baseIncident()] }),
     close: () => {},
     ...opts.incident,

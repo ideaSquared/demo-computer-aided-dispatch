@@ -11,6 +11,7 @@
  *   POST /api/units/:id/status       → 200, status 'outOfService', version 2
  *   PATCH /api/units/:id/location    → 200, moved, version UNCHANGED
  *   PATCH  (stale recordedAt)        → 200, position unchanged
+ *   GET  /api/units/:id/track        → 200, breadcrumb holds the moves
  *   GET  /api/units?tier=&status=    → 200, lists the live unit
  *
  * Exercises the full spine: http → gateway → gRPC → resource-service →
@@ -133,14 +134,44 @@ async function main(): Promise<void> {
     );
   }
 
-  // 6. The list endpoint should include the live unit when filtered by tier.
+  // 6. The position trail (ADR-0005). Registration seeds a point and the
+  //    accepted move adds one, so the breadcrumb holds both — and the stale
+  //    ping above must NOT appear, since a trail may never contain a point
+  //    the unit's position never was.
+  interface TrackPoint {
+    location: { lat: number; lng: number } | null;
+    recordedAt: string;
+  }
+  const track = await req<{ points: TrackPoint[] }>('GET', `/api/units/${unit.id}/track`);
+  if (track.status !== 200) {
+    throw new Error(`GET .../track: expected 200, got ${track.status}`);
+  }
+  if (track.json.points.length < 2) {
+    throw new Error(`track: expected at least 2 points, got ${track.json.points.length}`);
+  }
+  const last = track.json.points[track.json.points.length - 1];
+  if (last?.location?.lat !== movedTo.lat) {
+    throw new Error(`track: expected to end at lat ${movedTo.lat}, got ${last?.location?.lat}`);
+  }
+  if (track.json.points.some((p) => p.location?.lat === 0 && p.location?.lng === 0)) {
+    throw new Error('track: the dropped stale ping leaked into the breadcrumb');
+  }
+  // Oldest first, so a caller can draw a polyline without reversing.
+  const stamps = track.json.points.map((p) => Date.parse(p.recordedAt));
+  if (stamps.some((t, i) => i > 0 && t < (stamps[i - 1] as number))) {
+    throw new Error('track: points are not ordered oldest-first');
+  }
+
+  // 7. The list endpoint should include the live unit when filtered by tier.
   const listed = await req<{ units: Unit[] }>('GET', '/api/units?tier=fire');
   if (listed.status !== 200) throw new Error(`GET /api/units: expected 200, got ${listed.status}`);
   if (!listed.json.units.some((u) => u.id === unit.id)) {
     throw new Error(`listUnits did not include live unit ${unit.id}`);
   }
 
-  console.log(`SERVING  ${BASE}/api/units — register → get → status → move → stale-drop → list OK`);
+  console.log(
+    `SERVING  ${BASE}/api/units — register → get → status → move → stale-drop → track → list OK`,
+  );
   process.exit(0);
 }
 

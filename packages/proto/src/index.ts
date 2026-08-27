@@ -65,9 +65,12 @@ export type {
   DeclareMajorResponse,
   DispatchRequest,
   DispatchResponse,
+  GetHistoryRequest,
+  GetHistoryResponse,
   GetRequest,
   GetResponse,
   Incident,
+  IncidentHistoryEntry,
   ListOpenRequest,
   ListOpenResponse,
   OpenRequest,
@@ -81,12 +84,15 @@ export type {
 } from '../gen/ts/cad/incident/v1/incident.js';
 export * as IncidentV1 from '../gen/ts/cad/incident/v1/incident.js';
 export type {
+  GetTrackRequest,
+  GetTrackResponse,
   GetUnitRequest,
   GetUnitResponse,
   ListUnitsRequest,
   ListUnitsResponse,
   RegisterUnitRequest,
   RegisterUnitResponse,
+  TrackPoint,
   Unit,
   UpdateLocationRequest,
   UpdateLocationResponse,

@@ -124,6 +124,12 @@ const LocationBodySchema = z.object({
 
 const IdParamsSchema = z.object({ id: z.string().min(1) });
 
+/** Track window bounds, epoch millis. Both optional — omit to run open-ended. */
+const TrackQuerySchema = z.object({
+  sinceMs: z.coerce.number().int().nonnegative().optional(),
+  untilMs: z.coerce.number().int().nonnegative().optional(),
+});
+
 const ListQuerySchema = z.object({
   tier: TierSchema.optional(),
   status: StatusSchema.optional(),
@@ -144,6 +150,9 @@ const GRPC_STATUS_TO_HTTP: Partial<Record<grpc.status, number>> = {
   [grpc.status.INVALID_ARGUMENT]: 400,
   [grpc.status.UNAUTHENTICATED]: 401,
   [grpc.status.PERMISSION_DENIED]: 403,
+  // A backend that's down or a capability that's switched off is the
+  // server's problem, not the caller's — 503 rather than a bare 500.
+  [grpc.status.UNAVAILABLE]: 503,
 };
 
 function replyError(reply: FastifyReply, err: unknown): FastifyReply {
@@ -297,6 +306,42 @@ export function registerUnitRoutes(
         /* best-effort */
       });
       return reply.send({ unit: toJson(res.unit) });
+    } catch (err) {
+      return replyError(reply, err);
+    }
+  });
+
+  /**
+   * A unit's recent position trail (ADR-0005) — the breadcrumb the map draws
+   * behind a moving marker, oldest first.
+   *
+   * Bounded server-side by the rolling window whatever range is asked for, so
+   * there is no pagination and no way to ask for more than the window holds.
+   * 503 when trails are switched off, because a disabled feature and a unit
+   * that hasn't moved must not look the same to the client.
+   */
+  app.get('/api/units/:id/track', async (req, reply) => {
+    const params = IdParamsSchema.safeParse(req.params);
+    if (!params.success) return replyValidation(reply, params.error);
+    const query = TrackQuerySchema.safeParse(req.query);
+    if (!query.success) return replyValidation(reply, query.error);
+    const session = await requireAbility(req, reply, gate, 'view', { kind: 'Unit' });
+    if (!session) return reply;
+    try {
+      const res = await client.getTrack(
+        {
+          id: params.data.id,
+          sinceMs: query.data.sinceMs ?? 0,
+          untilMs: query.data.untilMs ?? 0,
+        },
+        operatorMetadata(session),
+      );
+      return reply.send({
+        points: res.points.map((p) => ({
+          location: p.location ? { lat: p.location.lat, lng: p.location.lng } : null,
+          recordedAt: p.recordedAt,
+        })),
+      });
     } catch (err) {
       return replyError(reply, err);
     }

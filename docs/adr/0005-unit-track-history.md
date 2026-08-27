@@ -57,11 +57,14 @@ when it is empty.
 
 - The map can draw where a unit has been, and the scrubber in ADR-0006 has
   something to scrub. Neither was possible before.
-- **`service.resource` gains a Redis dependency it does not have today.**
-  Only the gateway and `service.notification` use `@cad/redis` so far, so this
-  widens the service's dependency surface — a resource instance now needs
-  Redis reachable to serve `GetTrack`, where previously Postgres and NATS were
-  enough.
+- **`service.resource` starts actually using Redis.** The wiring already
+  exists — its config declares `REDIS_URL`, the Compose fragment supplies it
+  and already waits on `redis: service_healthy` — but nothing in the service
+  ever opened a connection. So this is a dormant dependency waking up rather
+  than a new one being added, which is a smaller change than it first looks.
+  `REDIS_URL` stays optional in the schema; with it unset, track writes are
+  skipped and `GetTrack` fails loudly with FAILED_PRECONDITION rather than
+  returning an empty trail that reads as "this unit hasn't moved".
 - **The hot ping path grows two Redis operations.** They pipeline into one
   round trip and Redis is not the bottleneck at this rate, but the position
   write is now the busiest path in the system and it just got wider. Worth
