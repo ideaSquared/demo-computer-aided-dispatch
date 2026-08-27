@@ -133,6 +133,14 @@ interface Drive {
 interface SimUnit {
   home: Geo | null;
   drive: Drive | null;
+  /**
+   * The incident `drive` was plotted towards, or null when it's heading home.
+   *
+   * Without this a re-dispatch is invisible: the unit keeps driving the route
+   * it already had, towards an incident it is no longer assigned to, and its
+   * distance to the actual scene grows every tick.
+   */
+  destIncidentId: string | null;
   dwellUntil: number | null;
   /** Set when a human takes over. Never cleared — one-way, see ADR-0004. */
   released: boolean;
@@ -373,18 +381,33 @@ async function step(unit: Unit, incidents: Map<string, Incident>): Promise<void>
   if (!state) {
     // First sighting: wherever it is now becomes its station, so it has
     // somewhere to return to after it clears.
-    state = { home: unit.location, drive: null, dwellUntil: null, released: false };
+    state = {
+      home: unit.location,
+      drive: null,
+      destIncidentId: null,
+      dwellUntil: null,
+      released: false,
+    };
     sim.set(unit.id, state);
   }
   if (state.released) return;
 
   const metres = SPEED_MPS[unit.tier] * (TICK_MS / 1000);
 
-  /** Plot a course to the unit's assigned incident, if we can. */
-  const routeToScene = async (): Promise<Drive | null> => {
+  /**
+   * Ensure `drive` is heading at the unit's CURRENT incident, re-plotting if
+   * it has none or if the assignment changed under it. Returns false when no
+   * route could be made, so the caller can skip the tick.
+   */
+  const ensureRouteToScene = async (): Promise<boolean> => {
+    if (state.drive && state.destIncidentId === unit.incidentId) return true;
     const target = unit.incidentId ? incidents.get(unit.incidentId) : undefined;
-    if (!target?.location || !unit.location) return null;
-    return route(unit.location, target.location);
+    if (!target?.location || !unit.location) return false;
+    const plotted = await route(unit.location, target.location);
+    if (!plotted) return false;
+    state.drive = plotted;
+    state.destIncidentId = unit.incidentId;
+    return true;
   };
 
   switch (unit.status) {
@@ -392,23 +415,23 @@ async function step(unit: Unit, incidents: Map<string, Incident>): Promise<void>
       // Plot the route first, then acknowledge — so a unit never sits in
       // enRoute with nowhere to drive. Either step can fail benignly: an
       // unroutable point, or a 409 because a responder acknowledged first.
-      state.drive ??= await routeToScene();
-      if (!state.drive) return;
+      if (!(await ensureRouteToScene())) return;
       await setStatus(unit, state, 'enRoute', unit.incidentId ?? undefined);
       return;
     }
 
     case 'enRoute': {
-      // Re-plot if the unit was already en route when the simulator started,
-      // or if it was re-dispatched to somewhere new.
-      state.drive ??= await routeToScene();
-      if (!state.drive) return;
-      await ping(unit, advance(state.drive, metres));
+      // Re-plots if the unit was already en route when the simulator started,
+      // and — the case that actually bit — if it was re-dispatched somewhere
+      // new while driving.
+      if (!(await ensureRouteToScene())) return;
+      await ping(unit, advance(state.drive as Drive, metres));
       if (
         arrived(state.drive) &&
         (await setStatus(unit, state, 'onScene', unit.incidentId ?? undefined))
       ) {
         state.drive = null;
+        state.destIncidentId = null;
         state.dwellUntil = Date.now() + between(DWELL_MIN_MS, DWELL_MAX_MS);
       }
       return;
@@ -433,7 +456,9 @@ async function step(unit: Unit, incidents: Map<string, Incident>): Promise<void>
         });
       }
 
-      // Head back to station.
+      // Head back to station. `destIncidentId` stays null so the next
+      // dispatch re-plots rather than inheriting the drive home.
+      state.destIncidentId = null;
       if (unit.location && state.home) {
         state.drive = await route(unit.location, state.home);
       }
