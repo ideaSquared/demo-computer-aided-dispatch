@@ -150,3 +150,59 @@ describe('LeafletMap marker diff', () => {
     expect(__leafletMocks.unitMarkers().has('Pump 2')).toBe(true);
   });
 });
+
+describe('LeafletMap unit trail', () => {
+  const trail = [
+    { lat: 51.5, lng: -0.1 },
+    { lat: 51.51, lng: -0.11 },
+    { lat: 51.52, lng: -0.12 },
+  ];
+
+  it('draws the breadcrumb polyline on its own layer', () => {
+    render(
+      <LeafletMap
+        incidents={[]}
+        units={[]}
+        onIncidentClick={noop}
+        onUnitClick={noop}
+        trail={trail}
+      />,
+    );
+    expect(__leafletMocks.trailPoints()).toEqual([
+      [51.5, -0.1],
+      [51.51, -0.11],
+      [51.52, -0.12],
+    ]);
+  });
+
+  it('draws nothing for a single point — a line needs two ends', () => {
+    render(
+      <LeafletMap
+        incidents={[]}
+        units={[]}
+        onIncidentClick={noop}
+        onUnitClick={noop}
+        trail={[{ lat: 51.5, lng: -0.1 }]}
+      />,
+    );
+    expect(__leafletMocks.trailPoints()).toBeNull();
+  });
+
+  it('clears the trail when the selection goes away', () => {
+    const { rerender } = render(
+      <LeafletMap
+        incidents={[]}
+        units={[]}
+        onIncidentClick={noop}
+        onUnitClick={noop}
+        trail={trail}
+      />,
+    );
+    expect(__leafletMocks.trailPoints()).not.toBeNull();
+
+    rerender(
+      <LeafletMap incidents={[]} units={[]} onIncidentClick={noop} onUnitClick={noop} trail={[]} />,
+    );
+    expect(__leafletMocks.trailPoints()).toBeNull();
+  });
+});

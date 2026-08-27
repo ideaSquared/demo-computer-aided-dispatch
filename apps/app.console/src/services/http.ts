@@ -20,6 +20,38 @@ const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
 let onUnauthorized: (() => void) | null = null;
 
+/**
+ * In-flight refresh, shared by every caller that hits a 401 at once.
+ *
+ * Without this, a single expiry would fire one refresh per concurrent
+ * request — the board, the fleet and the timeline all poll, so that's a
+ * burst of rotations racing each other for the same cookie.
+ */
+let refreshInFlight: Promise<boolean> | null = null;
+
+/**
+ * Rotate the session cookies. Uses raw `fetch`, not `authedFetch`, so a
+ * failing refresh can't recurse into itself.
+ */
+async function refreshSession(): Promise<boolean> {
+  refreshInFlight ??= (async () => {
+    try {
+      const csrf = readCookie(CSRF_COOKIE_NAME);
+      const res = await fetch(`${apiBaseUrl}/api/auth/refresh`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: csrf ? { 'x-csrf-token': csrf } : {},
+      });
+      return res.ok;
+    } catch {
+      return false;
+    } finally {
+      refreshInFlight = null;
+    }
+  })();
+  return refreshInFlight;
+}
+
 export function onUnauthorizedResponse(handler: (() => void) | null): void {
   onUnauthorized = handler;
 }
@@ -78,10 +110,30 @@ export async function authedFetch(path: string, init: AuthedFetchInit = {}): Pro
   };
   if (method !== undefined) requestInit.method = method;
   const res = await fetch(`${apiBaseUrl}${path}`, requestInit);
-  if (res.status === 401 && !anonymous) {
+  if (res.status !== 401 || anonymous) return res;
+
+  // A 401 is far more often an expired access cookie than a dead session:
+  // the cookie lives 15 minutes and nothing pre-schedules a rotation, so
+  // whichever poll lands first after expiry used to log the operator out
+  // mid-shift. Rotate once and retry before concluding anything.
+  const refreshed = await refreshSession();
+  if (!refreshed) {
     // Fire-and-forget: the handler tears down the session in the provider.
     // We still return the response so the caller can decide how to surface it.
     onUnauthorized?.();
+    return res;
   }
-  return res;
+
+  // Re-read the CSRF cookie — refresh rotates it, so the header we built
+  // before the retry is stale for mutating requests.
+  if (MUTATING.has(upperMethod)) {
+    const csrf = readCookie(CSRF_COOKIE_NAME);
+    if (csrf) finalHeaders['x-csrf-token'] = csrf;
+  }
+  const retried = await fetch(`${apiBaseUrl}${path}`, { ...requestInit, headers: finalHeaders });
+  if (retried.status === 401) {
+    // Refreshed and still refused — the session really is gone.
+    onUnauthorized?.();
+  }
+  return retried;
 }

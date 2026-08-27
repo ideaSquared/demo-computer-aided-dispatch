@@ -9,6 +9,7 @@
  *   POST /api/incidents          → 201, state 'open', version 1
  *   GET  /api/incidents/:id      → 200, matches the created incident
  *   POST /api/incidents/:id/triage → 200, state 'triaged', version 2
+ *   GET  /api/incidents/:id/history → 200, the event log, oldest first
  *   GET  /api/incidents          → 200, lists the live incident
  *
  * Exercises the full spine: http → gateway → gRPC → incident-service →
@@ -98,7 +99,40 @@ async function main(): Promise<void> {
     throw new Error(`triage: expected version 2, got ${triaged.json.incident.version}`);
   }
 
-  // 4. The list endpoint should include the live incident.
+  // 4. The timeline (ADR-0006) — read from the incident's own event log, so
+  //    it holds one entry per transition with the actor that caused it.
+  interface HistoryEntry {
+    type: string;
+    occurredAt: string;
+    version: number;
+    actor: string | null;
+    severity?: string;
+  }
+  const history = await req<{ entries: HistoryEntry[] }>('GET', `/api/incidents/${inc.id}/history`);
+  if (history.status !== 200) {
+    throw new Error(`GET .../history: expected 200, got ${history.status}`);
+  }
+  const types = history.json.entries.map((e) => e.type);
+  if (types.join(',') !== 'opened,triaged') {
+    throw new Error(`history: expected 'opened,triaged' oldest-first, got '${types.join(',')}'`);
+  }
+  const triageEntry = history.json.entries[1];
+  if (triageEntry?.severity !== 'high') {
+    throw new Error(`history: triage entry lost its severity, got '${triageEntry?.severity}'`);
+  }
+  // An operator action carries SOME actor, but not the one the body asked
+  // for: the gateway stamps `triagedBy` from the authenticated session and
+  // ignores the client's value, which is exactly right — a caller doesn't get
+  // to name who did something. Under DEV_AUTH_BYPASS that's the bypass
+  // operator, so assert the property rather than a specific id.
+  if (!triageEntry?.actor) {
+    throw new Error(`history: an operator action must carry an actor, got '${triageEntry?.actor}'`);
+  }
+  if (history.json.entries[0]?.version !== 1 || triageEntry.version !== 2) {
+    throw new Error('history: entries do not carry the version each event produced');
+  }
+
+  // 5. The list endpoint should include the live incident.
   const listed = await req<{ incidents: Incident[] }>('GET', '/api/incidents?tier=fire&limit=50');
   if (listed.status !== 200)
     throw new Error(`GET /api/incidents: expected 200, got ${listed.status}`);
@@ -106,7 +140,7 @@ async function main(): Promise<void> {
     throw new Error(`listOpen did not include live incident ${inc.id}`);
   }
 
-  console.log(`SERVING  ${BASE}/api/incidents — open → get → triage → list OK`);
+  console.log(`SERVING  ${BASE}/api/incidents — open → get → triage → history → list OK`);
   process.exit(0);
 }
 

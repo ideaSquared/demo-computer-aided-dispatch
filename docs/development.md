@@ -173,6 +173,33 @@ never duplicates the fleet. `SKIP_SEED=1 pnpm dev` skips that last step.
 Deps stay up after Ctrl-C on purpose: the next `pnpm dev` is then a few
 seconds rather than a cold Postgres boot.
 
+### The world simulator
+
+`pnpm seed` leaves you with a populated but motionless board. `pnpm sim`
+([`tools/scripts/sim.ts`](../tools/scripts/sim.ts)) runs the stack as a
+working day instead: calls arrive on a Poisson schedule, get triaged and
+dispatched to the nearest available unit, and units drive to them along real
+roads before arriving, working the scene, clearing and returning to station.
+
+```bash
+pnpm sim:deps          # OSRM routing engine (Compose `sim` profile)
+pnpm sim               # drive the world; Ctrl-C to stop
+pnpm sim:deps:down     # stop the routing engine
+```
+
+The first `pnpm sim:deps` downloads a map extract and preprocesses it, which
+takes minutes and a few GB of disk. Both are cached in the `cad-osrm` volume,
+so it happens once per machine — which is why routing is behind a profile and
+not part of `pnpm dev`.
+
+The simulator is an ordinary HTTP client of the gateway, so it exercises the
+same auth, gRPC, event and WebSocket path the console does. It sends
+`expectedVersion` on every status write and releases a unit permanently the
+first time it gets a 409 — so if you take a unit over from the responder app,
+it stops touching that unit. Tuning: `SIM_TICK_MS`, `SIM_INCIDENT_MEAN_MS`,
+`SIM_OSRM`. Rationale in
+[ADR-0004](adr/0004-dev-simulator-and-routing.md).
+
 The deps can still be driven on their own:
 
 ```bash
@@ -284,6 +311,7 @@ It's the only Python in the repo; everything else is TypeScript.
 | `EPERM ... open 'C:\Program Files\nodejs\pnpx'` on `corepack enable` | corepack writing shims into an elevated dir | Use `npm install -g pnpm@11.5.1`, or run the terminal as admin. See [Windows](#windows). |
 | `This version of pnpm requires at least Node.js v22.13` | Node < 22 | Upgrade to Node 22 LTS. |
 | `ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION` | Editing deps with a stricter pnpm policy than the repo's | The repo already sets `minimumReleaseAge: 0`; make sure you didn't override it in a user-level `.npmrc`. |
+| `write CONNECT_TIMEOUT localhost:5432` under load | `localhost` resolved to ::1; Docker publishes on IPv4 and the v6 path hangs then resets | Use `127.0.0.1` in `DATABASE_URL`/`REDIS_URL`/`NATS_URL` — `.env.example` already does. Only bites once something drives real concurrency, e.g. `pnpm sim`. |
 | `pnpm dev` → port already allocated | Another project's Compose stack is on 5432/6379/4222/16686 | `pnpm dev` names the container holding the port — `docker stop <name>`, then re-run. |
 | `pnpm dev` → "these ports are taken" | A previous `pnpm dev` didn't shut down | Close it. Windows also reserves 5040 (CDPSvc), which is why service.resource serves HTTP on 5042. |
 | `pnpm smoke` → `NOT_SERVING` for everything | Deps/services not up, or probing too early | Ensure `pnpm dev:deps` + services are running; smoke retries for 60s per service. |

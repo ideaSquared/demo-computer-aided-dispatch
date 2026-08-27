@@ -1,5 +1,5 @@
 import type { DbClient, DbTransaction } from '@cad/db';
-import type { ServiceTier, UnitEvent, UnitState, UnitStatus } from '../domain/index.js';
+import type { GeoPoint, ServiceTier, UnitEvent, UnitState, UnitStatus } from '../domain/index.js';
 
 // postgres-js's `sql.json()` parameter is typed as `JSONValue` (a strict
 // index-signature shape) which structurally rejects our plain interfaces.
@@ -58,18 +58,42 @@ interface ViewRow {
   state: UnitState;
   version: number;
   updated_at: string;
+  /** Overlaid from `unit_positions`, not folded from the log (ADR-0003). */
+  location: GeoPoint | null;
+}
+
+/**
+ * Every read of a unit LEFT JOINs its current position. The join is spelled
+ * out in each query rather than factored into a fragment, matching the
+ * existing choice in `listUnits` to keep index usage visible at each call
+ * site. A unit with no row in `unit_positions` reads back as `location: null`
+ * — the same shape a unit registered without a point has always had.
+ */
+type PositionColumns = { lat: number | null; lng: number | null };
+
+function withLocation<T extends PositionColumns>(
+  row: T,
+): Omit<T, keyof PositionColumns> & {
+  location: GeoPoint | null;
+} {
+  const { lat, lng, ...rest } = row;
+  return {
+    ...rest,
+    location: lat === null || lng === null ? null : { lat: Number(lat), lng: Number(lng) },
+  };
 }
 
 export async function loadView(db: DbClient, aggregateId: string): Promise<ViewRow | null> {
-  const rows = await db<ViewRow[]>`
-    SELECT id, status, tier, state, version, updated_at
-    FROM unit_view
-    WHERE id = ${aggregateId}
+  const rows = await db<Array<Omit<ViewRow, 'location'> & PositionColumns>>`
+    SELECT v.id, v.status, v.tier, v.state, v.version, v.updated_at, p.lat, p.lng
+    FROM unit_view v
+    LEFT JOIN unit_positions p ON p.unit_id = v.id
+    WHERE v.id = ${aggregateId}
     LIMIT 1
   `;
   const row = rows[0];
   if (!row) return null;
-  return { ...row, version: Number(row.version) };
+  return { ...withLocation(row), version: Number(row.version) };
 }
 
 /**
@@ -83,36 +107,41 @@ export async function listUnits(
   opts: { tier?: ServiceTier | undefined; status?: UnitStatus | undefined },
 ): Promise<ViewRow[]> {
   const { tier, status } = opts;
-  let rows: ViewRow[];
+  type Row = Omit<ViewRow, 'location'> & PositionColumns;
+  let rows: Row[];
   if (tier && status) {
-    rows = await db<ViewRow[]>`
-      SELECT id, status, tier, state, version, updated_at
-      FROM unit_view
-      WHERE tier = ${tier} AND status = ${status}
-      ORDER BY updated_at DESC
+    rows = await db<Row[]>`
+      SELECT v.id, v.status, v.tier, v.state, v.version, v.updated_at, p.lat, p.lng
+      FROM unit_view v
+      LEFT JOIN unit_positions p ON p.unit_id = v.id
+      WHERE v.tier = ${tier} AND v.status = ${status}
+      ORDER BY v.updated_at DESC
     `;
   } else if (tier) {
-    rows = await db<ViewRow[]>`
-      SELECT id, status, tier, state, version, updated_at
-      FROM unit_view
-      WHERE tier = ${tier}
-      ORDER BY updated_at DESC
+    rows = await db<Row[]>`
+      SELECT v.id, v.status, v.tier, v.state, v.version, v.updated_at, p.lat, p.lng
+      FROM unit_view v
+      LEFT JOIN unit_positions p ON p.unit_id = v.id
+      WHERE v.tier = ${tier}
+      ORDER BY v.updated_at DESC
     `;
   } else if (status) {
-    rows = await db<ViewRow[]>`
-      SELECT id, status, tier, state, version, updated_at
-      FROM unit_view
-      WHERE status = ${status}
-      ORDER BY updated_at DESC
+    rows = await db<Row[]>`
+      SELECT v.id, v.status, v.tier, v.state, v.version, v.updated_at, p.lat, p.lng
+      FROM unit_view v
+      LEFT JOIN unit_positions p ON p.unit_id = v.id
+      WHERE v.status = ${status}
+      ORDER BY v.updated_at DESC
     `;
   } else {
-    rows = await db<ViewRow[]>`
-      SELECT id, status, tier, state, version, updated_at
-      FROM unit_view
-      ORDER BY updated_at DESC
+    rows = await db<Row[]>`
+      SELECT v.id, v.status, v.tier, v.state, v.version, v.updated_at, p.lat, p.lng
+      FROM unit_view v
+      LEFT JOIN unit_positions p ON p.unit_id = v.id
+      ORDER BY v.updated_at DESC
     `;
   }
-  return rows.map((r) => ({ ...r, version: Number(r.version) }));
+  return rows.map((r) => ({ ...withLocation(r), version: Number(r.version) }));
 }
 
 /**
@@ -172,6 +201,67 @@ export async function appendAndProject(
   `;
 
   return { newVersion };
+}
+
+/** A unit's current position, or null if none has ever been recorded. */
+export async function loadPosition(db: DbClient, unitId: string): Promise<GeoPoint | null> {
+  const rows = await db<Array<{ lat: number; lng: number }>>`
+    SELECT lat, lng FROM unit_positions WHERE unit_id = ${unitId} LIMIT 1
+  `;
+  const row = rows[0];
+  return row ? { lat: Number(row.lat), lng: Number(row.lng) } : null;
+}
+
+/**
+ * Seed a unit's position from its registration point. Runs inside the same
+ * transaction as the `UnitRegistered` append.
+ *
+ * `ON CONFLICT DO NOTHING` is the load-bearing clause: it makes this
+ * replay-safe. Re-running a unit's registration — rebuilding the read model
+ * from the log, say — must not drag a moving unit back to the car park it was
+ * registered in. First write wins; every write after it is telemetry's job.
+ */
+export async function seedPosition(
+  tx: DbTransaction,
+  args: { unitId: string; location: GeoPoint; recordedAt: string },
+): Promise<void> {
+  const { unitId, location, recordedAt } = args;
+  await tx`
+    INSERT INTO unit_positions (unit_id, lat, lng, recorded_at)
+    VALUES (${unitId}, ${location.lat}, ${location.lng}, ${recordedAt})
+    ON CONFLICT (unit_id) DO NOTHING
+  `;
+}
+
+/**
+ * Record a position ping. Last-write-wins, guarded on `recorded_at`.
+ *
+ * Telemetry has no aggregate version (ADR-0003), so the sample time is the
+ * only ordering we have. The `WHERE` on the conflict path drops a ping older
+ * than the one already stored — out-of-order delivery and a device with a
+ * lagging clock both land here. Returns false when the ping was dropped, so
+ * the caller can decline to publish an event for a position that didn't
+ * actually change anything.
+ *
+ * Note this writes no `unit_events` row and touches no version: a ping can
+ * never make an in-flight status command fail with a version conflict.
+ */
+export async function recordPosition(
+  db: DbClient,
+  args: { unitId: string; location: GeoPoint; recordedAt: string },
+): Promise<boolean> {
+  const { unitId, location, recordedAt } = args;
+  const rows = await db<Array<{ unit_id: string }>>`
+    INSERT INTO unit_positions (unit_id, lat, lng, recorded_at)
+    VALUES (${unitId}, ${location.lat}, ${location.lng}, ${recordedAt})
+    ON CONFLICT (unit_id) DO UPDATE SET
+      lat = EXCLUDED.lat,
+      lng = EXCLUDED.lng,
+      recorded_at = EXCLUDED.recorded_at
+    WHERE unit_positions.recorded_at < EXCLUDED.recorded_at
+    RETURNING unit_id
+  `;
+  return rows.length > 0;
 }
 
 function isUniqueViolation(err: unknown): boolean {

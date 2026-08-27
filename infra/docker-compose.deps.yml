@@ -41,6 +41,70 @@ services:
       timeout: 5s
       retries: 10
 
+  # --- simulator-only, behind the `sim` profile -----------------------------
+  #
+  # Neither of these starts with a plain `docker compose up` / `pnpm dev`.
+  # They exist for `pnpm sim` (ADR-0004), which routes units along real roads
+  # instead of interpolating straight lines across the Thames.
+  #
+  # First run downloads a map extract and preprocesses it into OSRM's graph
+  # format, which takes minutes and a chunk of disk. That work is cached in
+  # the `cad-osrm` volume, so every run after the first starts in seconds.
+  # This is precisely why the routing engine is not in the getting-started
+  # path: a new contributor should not wait for a map build to see the stack.
+
+  # One-shot: fetch the extract if the volume doesn't already hold it.
+  # Separate from `osrm` because the osrm-backend image has no downloader —
+  # busybox wget in the alpine image does the job.
+  osrm-fetch:
+    image: alpine:3.20
+    profiles: ["sim"]
+    environment:
+      # Any Geofabrik-style .osm.pbf works — swap the URL to move city.
+      OSRM_PBF_URL: ${OSRM_PBF_URL:-https://download.geofabrik.de/europe/united-kingdom/england/greater-london-latest.osm.pbf}
+    volumes:
+      - cad-osrm:/data
+    command:
+      - sh
+      - -c
+      - |
+        set -e
+        if [ -f /data/region.osm.pbf ]; then
+          echo "extract already present, skipping download"
+        else
+          echo "downloading $$OSRM_PBF_URL (this is the slow first run)"
+          wget -q -O /data/region.osm.pbf.part "$$OSRM_PBF_URL"
+          mv /data/region.osm.pbf.part /data/region.osm.pbf
+        fi
+
+  # Preprocess once, then serve. `osrm-routed` listens on 5000 inside the
+  # container, which is the gateway's port on the host — hence the 5055 map.
+  osrm:
+    image: osrm/osrm-backend:v5.25.0
+    profiles: ["sim"]
+    depends_on:
+      osrm-fetch:
+        condition: service_completed_successfully
+    ports:
+      - "5055:5000"
+    volumes:
+      - cad-osrm:/data
+    command:
+      - sh
+      - -c
+      - |
+        set -e
+        if [ ! -f /data/region.osrm.mldgr ]; then
+          echo "preprocessing the extract (once; cached in the cad-osrm volume)"
+          osrm-extract -p /opt/car.lua /data/region.osm.pbf
+          osrm-partition /data/region.osrm
+          osrm-customize /data/region.osrm
+        fi
+        exec osrm-routed --algorithm mld /data/region.osrm
+    # No healthcheck: osrm-routed serves no health endpoint and the image
+    # carries no HTTP client to probe one with. `pnpm sim` polls the port
+    # from the host instead, which is the thing that actually needs it up.
+
   jaeger:
     image: jaegertracing/all-in-one:1.62.0
     environment:
@@ -52,3 +116,6 @@ services:
 
 volumes:
   cad-postgres:
+  # Holds both the downloaded extract and OSRM's preprocessed graph, so the
+  # minutes-long first run happens exactly once per machine.
+  cad-osrm:

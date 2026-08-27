@@ -186,16 +186,35 @@ async function seedIfEmpty(): Promise<void> {
     return;
   }
 
-  try {
-    const res = await fetch(`${GATEWAY}/api/incidents`, { signal: AbortSignal.timeout(5_000) });
-    const body = (await res.json()) as { incidents?: unknown[] };
-    if ((body.incidents?.length ?? 0) > 0) {
-      log('stack already has incidents — skipping seed (`pnpm seed` to add more)');
+  // "Empty" has to mean "we asked and the answer was zero", never "we
+  // couldn't tell". An earlier version read `body.incidents?.length ?? 0` off
+  // whatever came back: a 500 returns perfectly valid JSON — `{"error":…}` —
+  // with no `incidents` key, which scored as zero and re-seeded a stack that
+  // already had data. That's how a fleet ends up with two of every callsign.
+  //
+  // Both collections are checked because they're seeded together: a blip on
+  // one service shouldn't be enough to duplicate the other's rows.
+  for (const path of ['/api/incidents', '/api/units'] as const) {
+    const key = path === '/api/incidents' ? 'incidents' : 'units';
+    let count: number | null;
+    try {
+      const res = await fetch(`${GATEWAY}${path}`, { signal: AbortSignal.timeout(5_000) });
+      const body = (await res.json()) as Record<string, unknown>;
+      const rows = body[key];
+      // Anything other than a 200 carrying an array means we don't know.
+      count = res.ok && Array.isArray(rows) ? rows.length : null;
+    } catch {
+      count = null;
+    }
+    if (count === null) {
+      log(`could not read ${key} — skipping seed rather than risk duplicating it.`);
+      log('  run `pnpm seed` by hand once the stack is healthy.');
       return;
     }
-  } catch {
-    log('could not read incidents — skipping seed. Run `pnpm seed` manually.');
-    return;
+    if (count > 0) {
+      log(`stack already has ${key} — skipping seed (\`pnpm seed\` to add more)`);
+      return;
+    }
   }
 
   log('empty stack — seeding demo data…');

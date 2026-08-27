@@ -9,6 +9,10 @@
  *   POST /api/units                  → 201, status 'available', version 1
  *   GET  /api/units/:id              → 200, matches the registered unit
  *   POST /api/units/:id/status       → 200, status 'outOfService', version 2
+ *   PATCH /api/units/:id/location    → 200, moved, version UNCHANGED
+ *   PATCH  (stale recordedAt)        → 200, position unchanged
+ *   PATCH  (second move)             → 200, trail gains a second point
+ *   GET  /api/units/:id/track        → 200, both moves, oldest first
  *   GET  /api/units?tier=&status=    → 200, lists the live unit
  *
  * Exercises the full spine: http → gateway → gRPC → resource-service →
@@ -97,14 +101,92 @@ async function main(): Promise<void> {
     throw new Error(`status: expected version 2, got ${updated.json.unit.version}`);
   }
 
-  // 4. The list endpoint should include the live unit when filtered by tier.
+  // 4. Move the unit (ADR-0003). The two things that matter: the new point
+  //    comes back on the unit, and `version` does NOT advance — telemetry
+  //    never touches the aggregate, which is what stops a moving unit from
+  //    409-ing an operator's in-flight status command.
+  const movedTo = { lat: 51.5155, lng: -0.0723 };
+  const moved = await req<{ unit: Unit }>('PATCH', `/api/units/${unit.id}/location`, {
+    location: movedTo,
+    recordedAt: new Date().toISOString(),
+  });
+  if (moved.status !== 200) {
+    throw new Error(`PATCH .../location: expected 200, got ${moved.status}`);
+  }
+  if (moved.json.unit.location?.lat !== movedTo.lat) {
+    throw new Error(`location: expected lat ${movedTo.lat}, got ${moved.json.unit.location?.lat}`);
+  }
+  if (moved.json.unit.version !== 2) {
+    throw new Error(`location must not bump version: expected 2, got ${moved.json.unit.version}`);
+  }
+
+  // 5. A ping older than the stored one is dropped, not applied — the
+  //    monotonicity guard that replaces the aggregate version for telemetry.
+  const stale = await req<{ unit: Unit }>('PATCH', `/api/units/${unit.id}/location`, {
+    location: { lat: 0, lng: 0 },
+    recordedAt: '2020-01-01T00:00:00.000Z',
+  });
+  if (stale.status !== 200) {
+    throw new Error(`PATCH .../location (stale): expected 200, got ${stale.status}`);
+  }
+  if (stale.json.unit.location?.lat !== movedTo.lat) {
+    throw new Error(
+      `stale ping must not move the unit: expected lat ${movedTo.lat}, got ${stale.json.unit.location?.lat}`,
+    );
+  }
+
+  // 6. Move again, so the trail has two points and its ordering is
+  //    meaningful. Registration does NOT seed the trail — ADR-0005 appends
+  //    only where a ping was accepted — so this is what makes a polyline
+  //    drawable at all.
+  const movedAgainTo = { lat: 51.5246, lng: -0.0786 };
+  const movedAgain = await req<{ unit: Unit }>('PATCH', `/api/units/${unit.id}/location`, {
+    location: movedAgainTo,
+    recordedAt: new Date(Date.now() + 1000).toISOString(),
+  });
+  if (movedAgain.status !== 200) {
+    throw new Error(`PATCH .../location (second): expected 200, got ${movedAgain.status}`);
+  }
+
+  // 7. The position trail (ADR-0005). Both accepted moves are in it; the
+  //    stale ping must NOT be, since a trail may never contain a point the
+  //    unit's position never was.
+  interface TrackPoint {
+    location: { lat: number; lng: number } | null;
+    recordedAt: string;
+  }
+  const track = await req<{ points: TrackPoint[] }>('GET', `/api/units/${unit.id}/track`);
+  if (track.status !== 200) {
+    throw new Error(`GET .../track: expected 200, got ${track.status}`);
+  }
+  if (track.json.points.length < 2) {
+    throw new Error(`track: expected at least 2 points, got ${track.json.points.length}`);
+  }
+  const last = track.json.points[track.json.points.length - 1];
+  if (last?.location?.lat !== movedAgainTo.lat) {
+    throw new Error(
+      `track: expected to end at lat ${movedAgainTo.lat}, got ${last?.location?.lat}`,
+    );
+  }
+  if (track.json.points.some((p) => p.location?.lat === 0 && p.location?.lng === 0)) {
+    throw new Error('track: the dropped stale ping leaked into the breadcrumb');
+  }
+  // Oldest first, so a caller can draw a polyline without reversing.
+  const stamps = track.json.points.map((p) => Date.parse(p.recordedAt));
+  if (stamps.some((t, i) => i > 0 && t < (stamps[i - 1] as number))) {
+    throw new Error('track: points are not ordered oldest-first');
+  }
+
+  // 8. The list endpoint should include the live unit when filtered by tier.
   const listed = await req<{ units: Unit[] }>('GET', '/api/units?tier=fire');
   if (listed.status !== 200) throw new Error(`GET /api/units: expected 200, got ${listed.status}`);
   if (!listed.json.units.some((u) => u.id === unit.id)) {
     throw new Error(`listUnits did not include live unit ${unit.id}`);
   }
 
-  console.log(`SERVING  ${BASE}/api/units — register → get → status → list OK`);
+  console.log(
+    `SERVING  ${BASE}/api/units — register → get → status → move → stale-drop → track → list OK`,
+  );
   process.exit(0);
 }
 

@@ -5,6 +5,8 @@ import type {
   DeclareMajorResponse,
   DispatchRequest,
   DispatchResponse,
+  GetHistoryRequest,
+  GetHistoryResponse,
   GetRequest,
   GetResponse,
   ListOpenRequest,
@@ -42,6 +44,7 @@ export interface IncidentClient {
   declareMajor(req: DeclareMajorRequest, md?: grpc.Metadata): Promise<DeclareMajorResponse>;
   get(req: GetRequest, md?: grpc.Metadata): Promise<GetResponse>;
   listOpen(req: ListOpenRequest, md?: grpc.Metadata): Promise<ListOpenResponse>;
+  getHistory(req: GetHistoryRequest, md?: grpc.Metadata): Promise<GetHistoryResponse>;
   close(): void;
 }
 
@@ -77,6 +80,8 @@ export function createIncidentClient(url: string): IncidentClient {
       call<DeclareMajorRequest, DeclareMajorResponse>(client.declareMajor, req, md),
     get: (req, md) => call<GetRequest, GetResponse>(client.get, req, md),
     listOpen: (req, md) => call<ListOpenRequest, ListOpenResponse>(client.listOpen, req, md),
+    getHistory: (req, md) =>
+      call<GetHistoryRequest, GetHistoryResponse>(client.getHistory, req, md),
     close: () => client.close(),
   };
 }

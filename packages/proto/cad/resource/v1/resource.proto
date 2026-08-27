@@ -19,6 +19,13 @@ service ResourceService {
   rpc GetUnit(GetUnitRequest) returns (GetUnitResponse);
   rpc ListUnits(ListUnitsRequest) returns (ListUnitsResponse);
   rpc UpdateStatus(UpdateStatusRequest) returns (UpdateStatusResponse);
+  // Position telemetry. Not a lifecycle transition: it appends nothing to the
+  // unit's event log and does not bump `version`, so it never conflicts with
+  // an in-flight UpdateStatus. See ADR-0003.
+  rpc UpdateLocation(UpdateLocationRequest) returns (UpdateLocationResponse);
+  // Recent position trail for one unit, oldest first. A rolling window held
+  // in Redis, not a durable record — see ADR-0005.
+  rpc GetTrack(GetTrackRequest) returns (GetTrackResponse);
 }
 
 // ---- requests --------------------------------------------------------------
@@ -50,6 +57,24 @@ message UpdateStatusRequest {
   string changed_by = 5;
 }
 
+message UpdateLocationRequest {
+  string id = 1;
+  cad.common.v1.GeoPoint location = 2;  // required — a ping without a point is not a ping.
+  // When the position was sampled, RFC3339, from the reporting device's clock.
+  // The server drops a ping older than the one it already holds; this replaces
+  // the expected_version guard that lifecycle commands use. Deliberately no
+  // expected_version field here — position is last-write-wins.
+  string recorded_at = 3;
+}
+
+message GetTrackRequest {
+  string id = 1;
+  // Epoch millis, both optional. Omit either to run open-ended; the window
+  // itself is bounded server-side regardless of what's asked for.
+  int64 since_ms = 2;
+  int64 until_ms = 3;
+}
+
 // ---- responses -------------------------------------------------------------
 
 message RegisterUnitResponse {
@@ -66,6 +91,19 @@ message ListUnitsResponse {
 
 message UpdateStatusResponse {
   Unit unit = 1;
+}
+
+message UpdateLocationResponse {
+  Unit unit = 1;
+}
+
+message GetTrackResponse {
+  repeated TrackPoint points = 1;  // oldest first.
+}
+
+message TrackPoint {
+  cad.common.v1.GeoPoint location = 1;
+  string recorded_at = 2;  // RFC3339.
 }
 
 // ---- domain shape ----------------------------------------------------------

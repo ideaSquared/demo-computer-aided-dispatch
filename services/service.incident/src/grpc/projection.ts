@@ -1,6 +1,12 @@
-import { type Incident, IncidentV1 } from '@cad/proto';
+import { type Incident, type IncidentHistoryEntry, IncidentV1 } from '@cad/proto';
 import type { AiSuggestionRow } from '../db/repository.js';
-import type { IncidentState, IncidentStatus, ServiceTier, Severity } from '../domain/index.js';
+import type {
+  IncidentEvent,
+  IncidentState,
+  IncidentStatus,
+  ServiceTier,
+  Severity,
+} from '../domain/index.js';
 
 /**
  * Pure mapping from the domain's `IncidentState` to the proto's `Incident`
@@ -97,4 +103,72 @@ export function fromProtoTier(t: IncidentV1.ServiceTier): ServiceTier | null {
 
 export function fromProtoSeverity(s: IncidentV1.Severity): Severity | null {
   return PROTO_SEVERITY_TO_DOMAIN[s] ?? null;
+}
+
+/**
+ * The event-type mapping that ADR-0006 leans on. Exposing the log over the
+ * wire made the aggregate's event names a public contract; translating them
+ * here is what buys the domain back its freedom to rename, exactly as
+ * `STATUS_TO_PROTO` does for the state machine.
+ */
+const EVENT_TYPE_TO_PROTO: Record<IncidentEvent['type'], IncidentV1.IncidentEventType> = {
+  IncidentOpened: IncidentV1.IncidentEventType.OPENED,
+  IncidentTriaged: IncidentV1.IncidentEventType.TRIAGED,
+  IncidentDispatched: IncidentV1.IncidentEventType.DISPATCHED,
+  IncidentMarkedEnRoute: IncidentV1.IncidentEventType.EN_ROUTE,
+  IncidentUnitArrived: IncidentV1.IncidentEventType.UNIT_ARRIVED,
+  IncidentResolved: IncidentV1.IncidentEventType.RESOLVED,
+  IncidentCancelled: IncidentV1.IncidentEventType.CANCELLED,
+  IncidentMajorDeclared: IncidentV1.IncidentEventType.MAJOR_DECLARED,
+};
+
+/**
+ * Who caused an event, or `''` when nobody did.
+ *
+ * The empty string is meaningful rather than missing data: a unit reporting
+ * en route or on scene moves the incident with no operator involved, and the
+ * timeline should say "the system did this" rather than name someone who
+ * wasn't there. The console renders those rows without an actor.
+ */
+function actorOf(event: IncidentEvent): string {
+  switch (event.type) {
+    case 'IncidentOpened':
+      return event.openedBy;
+    case 'IncidentTriaged':
+      return event.triagedBy;
+    case 'IncidentDispatched':
+      return event.dispatchedBy;
+    case 'IncidentResolved':
+      return event.resolvedBy;
+    case 'IncidentCancelled':
+      return event.cancelledBy;
+    case 'IncidentMajorDeclared':
+      return event.declaredBy;
+    case 'IncidentMarkedEnRoute':
+    case 'IncidentUnitArrived':
+      return '';
+  }
+}
+
+/**
+ * One log event → one timeline entry. Only the detail fields that this event
+ * type actually carries are populated; the rest stay at their proto defaults.
+ */
+export function toProtoHistoryEntry(event: IncidentEvent, version: number): IncidentHistoryEntry {
+  return {
+    type: EVENT_TYPE_TO_PROTO[event.type],
+    occurredAt: event.occurredAt,
+    version,
+    actor: actorOf(event),
+    severity:
+      event.type === 'IncidentTriaged'
+        ? SEVERITY_TO_PROTO[event.severity]
+        : IncidentV1.Severity.UNSPECIFIED,
+    unitIds: event.type === 'IncidentDispatched' ? event.unitIds : [],
+    unitId:
+      event.type === 'IncidentMarkedEnRoute' || event.type === 'IncidentUnitArrived'
+        ? event.unitId
+        : '',
+    reason: event.type === 'IncidentCancelled' ? event.reason : '',
+  };
 }

@@ -109,3 +109,56 @@ describe('useFleet', () => {
     expect(api.get).not.toHaveBeenCalled();
   });
 });
+
+describe('useFleet — position deltas', () => {
+  const seeded = makeUnit({ id: 'u1', location: { lat: 51.5, lng: -0.1 } });
+
+  it('moves a unit from the delta without refetching it', async () => {
+    // The whole point: a driving fleet emits several pings a second, and a
+    // refetch per ping is a round trip per frame of marker movement.
+    const { subscribe, deliver } = makeSubscribe();
+    const api = makeApi({ list: vi.fn(async () => [seeded]) });
+
+    const { result } = renderHook(() => useFleet({ subscribe, api }));
+    await waitFor(() => expect(result.current.units).toHaveLength(1));
+
+    act(() => deliver({ unitId: 'u1', location: { lat: 51.6, lng: -0.2 } }));
+
+    await waitFor(() =>
+      expect(result.current.units[0]?.location).toEqual({ lat: 51.6, lng: -0.2 }),
+    );
+    expect(api.get).not.toHaveBeenCalled();
+  });
+
+  it('still refetches for a delta that carries no position', async () => {
+    // Lifecycle changes carry a version and need the authoritative row.
+    const { subscribe, deliver } = makeSubscribe();
+    const api = makeApi({
+      list: vi.fn(async () => [seeded]),
+      get: vi.fn(async () => makeUnit({ id: 'u1', status: 'onScene', version: 3 })),
+    });
+
+    const { result } = renderHook(() => useFleet({ subscribe, api }));
+    await waitFor(() => expect(result.current.units).toHaveLength(1));
+
+    act(() => deliver({ unitId: 'u1', version: 3 }));
+
+    await waitFor(() => expect(api.get).toHaveBeenCalledWith('u1'));
+  });
+
+  it('ignores a position for a unit it does not hold', async () => {
+    // Inventing a half-populated row to hang a marker on would be worse than
+    // waiting for the next refresh.
+    const { subscribe, deliver } = makeSubscribe();
+    const api = makeApi({ list: vi.fn(async () => [seeded]) });
+
+    const { result } = renderHook(() => useFleet({ subscribe, api }));
+    await waitFor(() => expect(result.current.units).toHaveLength(1));
+
+    act(() => deliver({ unitId: 'not-on-the-roster', location: { lat: 1, lng: 2 } }));
+
+    expect(result.current.units).toHaveLength(1);
+    expect(result.current.units[0]?.location).toEqual({ lat: 51.5, lng: -0.1 });
+    expect(api.get).not.toHaveBeenCalled();
+  });
+});

@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { UnitRegisteredSchema, UnitStatusChangedSchema } from '../resource/schemas.js';
+import {
+  UnitLocationUpdatedSchema,
+  UnitRegisteredSchema,
+  UnitStatusChangedSchema,
+} from '../resource/schemas.js';
 
 const envelope = {
   eventId: '4f2a8e3f-2b1d-4f6a-9c4d-2f7e8a1b2c3d',
@@ -76,5 +80,29 @@ describe('UnitStatusChangedSchema', () => {
         changedBy: 'op-1',
       }),
     ).toThrow();
+  });
+});
+
+describe('UnitLocationUpdatedSchema', () => {
+  const ping = {
+    ...envelope,
+    unitId: aggregate.unitId,
+    tier: aggregate.tier,
+    location: { lat: 51.5074, lng: -0.1278 },
+  };
+
+  it('accepts a well-formed ping', () => {
+    expect(() => UnitLocationUpdatedSchema.parse(ping)).not.toThrow();
+  });
+
+  it('rejects a null location — a ping without a point is not a ping', () => {
+    expect(() => UnitLocationUpdatedSchema.parse({ ...ping, location: null })).toThrow();
+  });
+
+  it('carries no version, so a payload shaped like a lifecycle event is not required to', () => {
+    // The guard that matters: adding `version` back would make every
+    // publisher have to source one, which is the coupling ADR-0003 removes.
+    const parsed = UnitLocationUpdatedSchema.parse(ping);
+    expect(parsed).not.toHaveProperty('version');
   });
 });

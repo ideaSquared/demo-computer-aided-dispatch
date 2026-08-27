@@ -1,7 +1,12 @@
 import { IncidentV1 } from '@cad/proto';
 import { describe, expect, it } from 'vitest';
-import type { IncidentState } from '../domain/index.js';
-import { fromProtoSeverity, fromProtoTier, toProtoIncident } from '../grpc/projection.js';
+import type { IncidentEvent, IncidentState } from '../domain/index.js';
+import {
+  fromProtoSeverity,
+  fromProtoTier,
+  toProtoHistoryEntry,
+  toProtoIncident,
+} from '../grpc/projection.js';
 
 const base: IncidentState = {
   status: 'open',
@@ -83,5 +88,67 @@ describe('fromProtoTier / fromProtoSeverity', () => {
   it('returns null for UNSPECIFIED', () => {
     expect(fromProtoTier(IncidentV1.ServiceTier.UNSPECIFIED)).toBeNull();
     expect(fromProtoSeverity(IncidentV1.Severity.UNSPECIFIED)).toBeNull();
+  });
+});
+
+describe('toProtoHistoryEntry', () => {
+  const at = '2026-06-02T10:00:00.000Z';
+
+  it('maps every domain event type to a distinct proto enum', () => {
+    // The mapping ADR-0006 leans on: the log is a public contract now, and
+    // this layer is what lets the domain rename its events without breaking
+    // clients. A missing case here is a silently UNSPECIFIED timeline row.
+    const events: IncidentEvent[] = [
+      {
+        type: 'IncidentOpened',
+        occurredAt: at,
+        title: 'T',
+        tier: 'fire',
+        location: { lat: 1, lng: 2 },
+        openedBy: 'op-1',
+      },
+      { type: 'IncidentTriaged', occurredAt: at, severity: 'high', triagedBy: 'op-1' },
+      { type: 'IncidentDispatched', occurredAt: at, unitIds: ['u-1', 'u-2'], dispatchedBy: 'op-2' },
+      { type: 'IncidentMarkedEnRoute', occurredAt: at, unitId: 'u-1' },
+      { type: 'IncidentUnitArrived', occurredAt: at, unitId: 'u-1' },
+      { type: 'IncidentResolved', occurredAt: at, resolvedBy: 'op-3' },
+      { type: 'IncidentCancelled', occurredAt: at, reason: 'duplicate', cancelledBy: 'op-3' },
+      { type: 'IncidentMajorDeclared', occurredAt: at, declaredBy: 'op-4' },
+    ];
+    const types = events.map((e, i) => toProtoHistoryEntry(e, i + 1).type);
+    expect(types).not.toContain(IncidentV1.IncidentEventType.UNSPECIFIED);
+    expect(new Set(types).size).toBe(events.length);
+  });
+
+  it('carries the actor for operator actions', () => {
+    const entry = toProtoHistoryEntry(
+      { type: 'IncidentTriaged', occurredAt: at, severity: 'high', triagedBy: 'op-7' },
+      2,
+    );
+    expect(entry.actor).toBe('op-7');
+    expect(entry.severity).toBe(IncidentV1.Severity.HIGH);
+    expect(entry.version).toBe(2);
+  });
+
+  it('leaves the actor empty for system-driven transitions', () => {
+    // A unit reporting en route moves the incident with no operator
+    // involved. Naming one would be a lie the console then renders.
+    const entry = toProtoHistoryEntry(
+      { type: 'IncidentMarkedEnRoute', occurredAt: at, unitId: 'u-1' },
+      3,
+    );
+    expect(entry.actor).toBe('');
+    expect(entry.unitId).toBe('u-1');
+  });
+
+  it('populates only the detail fields its event type carries', () => {
+    const dispatched = toProtoHistoryEntry(
+      { type: 'IncidentDispatched', occurredAt: at, unitIds: ['u-1'], dispatchedBy: 'op-2' },
+      4,
+    );
+    expect(dispatched.unitIds).toEqual(['u-1']);
+    expect(dispatched.unitId).toBe('');
+    expect(dispatched.reason).toBe('');
+    expect(dispatched.severity).toBe(IncidentV1.Severity.UNSPECIFIED);
   });
 });

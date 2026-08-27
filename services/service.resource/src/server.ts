@@ -1,5 +1,6 @@
 import { createDbClient } from '@cad/db';
 import { connect } from '@cad/events';
+import { createRedisClient, type Redis } from '@cad/redis';
 import Fastify from 'fastify';
 import { config } from './config.js';
 import { migrate } from './db/migrate.js';
@@ -27,10 +28,22 @@ if (config.MIGRATE_ON_BOOT) {
 //    request — matches the precedent in service.incident.
 const db = createDbClient({ url: config.DATABASE_URL, schema: config.DB_SCHEMA });
 const nats = await connect(config.NATS_URL);
-app.log.info({ database: config.DATABASE_URL, nats: config.NATS_URL }, 'connected to deps');
+// Redis is optional: it backs position trails (ADR-0005) and nothing else, so
+// a stack without it still serves every other RPC. Connect eagerly rather
+// than lazily so a bad URL fails at boot instead of on an operator's first
+// track request.
+let redis: Redis | undefined;
+if (config.REDIS_URL) {
+  redis = createRedisClient(config.REDIS_URL);
+  await redis.connect();
+}
+app.log.info(
+  { database: config.DATABASE_URL, nats: config.NATS_URL, tracks: redis ? 'on' : 'off' },
+  'connected to deps',
+);
 
 // 3. Build the gRPC handlers and start the gRPC server alongside Fastify.
-const handlers = createHandlers({ db, nats });
+const handlers = createHandlers({ db, nats, redis, trackWindowMs: config.TRACK_WINDOW_MS });
 const grpcServer = await startGrpcServer({ port: config.GRPC_PORT, handlers, log: app.log });
 
 // 4. The dispatch→unit-status loop: react to incident.dispatched by assigning
@@ -58,6 +71,7 @@ async function shutdown(signal: string): Promise<void> {
       /* logged via tryShutdown's own observability if needed */
     });
     await nats.drain();
+    redis?.disconnect();
     await db.end({ timeout: 5 });
   } finally {
     process.exit(0);

@@ -31,6 +31,12 @@ export const STREAMS = {
     // `subjects.ts`); we bind them into the `resource` stream because the
     // domain owner is service.resource. A future PR can rename the
     // subjects to `resource.unit.*` without touching this list.
+    //
+    // NOTE: nothing calls `ensureStream(STREAMS.resource)` today — unit
+    // events are core NATS pub/sub. Whoever creates this stream must first
+    // narrow the wildcard to ['unit.registered', 'unit.statusChanged']:
+    // `unit.locationUpdated` is 1 Hz-per-unit telemetry (ADR-0003) and has
+    // no business sitting in seven days of retention.
     subjects: ['unit.*'],
     retention: 'limits',
     maxAgeMs: SEVEN_DAYS_MS,

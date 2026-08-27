@@ -3,21 +3,30 @@ import type { DbClient } from '@cad/db';
 import { withTransaction } from '@cad/db';
 import type { NatsConnection } from '@cad/events';
 import { publish, subjects } from '@cad/events';
-import { UnitRegisteredSchema, UnitStatusChangedSchema } from '@cad/events/resource';
+import {
+  UnitLocationUpdatedSchema,
+  UnitRegisteredSchema,
+  UnitStatusChangedSchema,
+} from '@cad/events/resource';
 import { subject as caslSubject, PermissionDeniedError } from '@cad/lib.authz';
 import { ResourceV1 } from '@cad/proto';
+import type { Redis } from '@cad/redis';
 import * as grpc from '@grpc/grpc-js';
 import {
   appendAndProject,
   ConcurrencyError,
   listUnits,
   loadEvents,
+  loadPosition,
   loadView,
+  recordPosition,
+  seedPosition,
 } from '../db/repository.js';
 import {
   assign,
   clear,
   fold,
+  type GeoPoint,
   InvariantError,
   markEnRoute,
   markOnScene,
@@ -27,12 +36,21 @@ import {
   type UnitEvent,
   type UnitState,
 } from '../domain/index.js';
+import { appendTrack, readTrack } from '../track.js';
 import { ensureAllowed, readOperatorContext } from './operator.js';
 import { fromProtoStatus, fromProtoTier, toProtoUnit } from './projection.js';
 
 interface Deps {
   db: DbClient;
   nats: NatsConnection;
+  /**
+   * Optional: position trails (ADR-0005) are disabled when it's absent. The
+   * service is fully functional without it — only `GetTrack` stops working,
+   * and it says so rather than answering with an empty trail.
+   */
+  redis?: Redis | undefined;
+  /** Rolling window kept per unit. Only meaningful when `redis` is set. */
+  trackWindowMs?: number | undefined;
   /** Override for tests. Production uses `Date.now()` + `randomUUID()`. */
   now?: () => string;
   newId?: () => string;
@@ -69,6 +87,12 @@ export function createHandlers(deps: Deps): ResourceV1.ResourceServiceServer {
     aggregateId: string,
     command: Cmd,
     preCheck?: (state: UnitState | null) => void,
+    /**
+     * Extra write to run inside the append transaction. Only registration
+     * uses it, to seed `unit_positions` from the registration point — so the
+     * unit is never briefly visible with no position at all.
+     */
+    inTx?: (tx: Parameters<Parameters<typeof withTransaction>[1]>[0]) => Promise<void>,
   ): Promise<{ newEvents: UnitEvent[]; nextState: UnitState; newVersion: number }> {
     const { events: history, version: expectedVersion } = await loadEvents(deps.db, aggregateId);
     const current = fold(history);
@@ -83,9 +107,16 @@ export function createHandlers(deps: Deps): ResourceV1.ResourceServiceServer {
     if (nextState === null) {
       throw new Error('post-command state is null (impossible)');
     }
-    const { newVersion } = await withTransaction(deps.db, (tx) =>
-      appendAndProject(tx, { aggregateId, expectedVersion, newEvents, nextState }),
-    );
+    const { newVersion } = await withTransaction(deps.db, async (tx) => {
+      const result = await appendAndProject(tx, {
+        aggregateId,
+        expectedVersion,
+        newEvents,
+        nextState,
+      });
+      await inTx?.(tx);
+      return result;
+    });
     return { newEvents, nextState, newVersion };
   }
 
@@ -179,19 +210,27 @@ export function createHandlers(deps: Deps): ResourceV1.ResourceServiceServer {
             caslSubject('Unit', { tier }),
           );
           const id = newId();
-          const { nextState, newEvents, newVersion } = await execute(id, (state) =>
-            register(state, {
-              callsign: call.request.callsign,
-              tier,
-              location: call.request.location
-                ? { lat: call.request.location.lat, lng: call.request.location.lng }
-                : null,
-              registeredBy: call.request.registeredBy || 'unknown',
-              occurredAt: now(),
-            }),
+          const occurredAt = now();
+          const location: GeoPoint | null = call.request.location
+            ? { lat: call.request.location.lat, lng: call.request.location.lng }
+            : null;
+          const { nextState, newEvents, newVersion } = await execute(
+            id,
+            (state) =>
+              register(state, {
+                callsign: call.request.callsign,
+                tier,
+                location,
+                registeredBy: call.request.registeredBy || 'unknown',
+                occurredAt,
+              }),
+            undefined,
+            location
+              ? (tx) => seedPosition(tx, { unitId: id, location, recordedAt: occurredAt })
+              : undefined,
           );
           await publishAll(id, tier, newVersion - newEvents.length + 1, newEvents, nextState);
-          callback(null, { unit: toProtoUnit(id, nextState, newVersion) });
+          callback(null, { unit: toProtoUnit(id, nextState, newVersion, location) });
         } catch (err) {
           callback(mapError(err), null);
         }
@@ -229,7 +268,12 @@ export function createHandlers(deps: Deps): ResourceV1.ResourceServiceServer {
             newEvents,
             nextState,
           );
-          callback(null, { unit: toProtoUnit(call.request.id, nextState, newVersion) });
+          // Read position back so the response carries it. Without this a
+          // status change would answer `location: null` and the console,
+          // which reconciles from exactly this response, would drop the
+          // unit's marker until its next ping.
+          const location = await loadPosition(deps.db, call.request.id);
+          callback(null, { unit: toProtoUnit(call.request.id, nextState, newVersion, location) });
         } catch (err) {
           callback(mapError(err), null);
         }
@@ -245,7 +289,7 @@ export function createHandlers(deps: Deps): ResourceV1.ResourceServiceServer {
               code: grpc.status.NOT_FOUND,
             });
           }
-          callback(null, { unit: toProtoUnit(row.id, row.state, row.version) });
+          callback(null, { unit: toProtoUnit(row.id, row.state, row.version, row.location) });
         } catch (err) {
           callback(mapError(err), null);
         }
@@ -265,7 +309,131 @@ export function createHandlers(deps: Deps): ResourceV1.ResourceServiceServer {
               : (fromProtoStatus(call.request.status) ?? undefined);
           const rows = await listUnits(deps.db, { tier, status });
           callback(null, {
-            units: rows.map((r) => toProtoUnit(r.id, r.state, r.version)),
+            units: rows.map((r) => toProtoUnit(r.id, r.state, r.version, r.location)),
+          });
+        } catch (err) {
+          callback(mapError(err), null);
+        }
+      })();
+    },
+
+    /**
+     * A unit's recent position trail (ADR-0005). Read-only, and read from
+     * Redis rather than Postgres because the data lives for half an hour.
+     *
+     * With no Redis configured this fails rather than returning an empty
+     * list: an empty trail and a disabled feature look identical on a map,
+     * and only one of them means "this unit hasn't moved".
+     */
+    getTrack: (call, callback) => {
+      void (async () => {
+        try {
+          if (!deps.redis) {
+            // UNAVAILABLE, not FAILED_PRECONDITION: nothing about the request
+            // is wrong, the capability just isn't switched on here. The
+            // gateway turns it into a 503.
+            throw Object.assign(
+              new Error('track history is unavailable: REDIS_URL is not configured'),
+              { code: grpc.status.UNAVAILABLE },
+            );
+          }
+          const row = await loadView(deps.db, call.request.id);
+          if (!row) {
+            throw Object.assign(new Error(`unit '${call.request.id}' not found`), {
+              code: grpc.status.NOT_FOUND,
+            });
+          }
+          ensureAllowed(
+            readOperatorContext(call.metadata),
+            'view',
+            caslSubject('Unit', { id: call.request.id, tier: row.state.tier }),
+          );
+          const sinceMs = Number(call.request.sinceMs);
+          const untilMs = Number(call.request.untilMs);
+          const points = await readTrack(deps.redis, {
+            unitId: call.request.id,
+            // 0 is proto3's default for an unset int64, and no caller means
+            // "the epoch" — so treat it as open-ended.
+            since: sinceMs > 0 ? sinceMs : undefined,
+            until: untilMs > 0 ? untilMs : undefined,
+          });
+          callback(null, {
+            points: points.map((p) => ({ location: p.location, recordedAt: p.recordedAt })),
+          });
+        } catch (err) {
+          callback(mapError(err), null);
+        }
+      })();
+    },
+
+    /**
+     * Position telemetry (ADR-0003). Deliberately NOT shaped like the other
+     * write handlers: no event log, no fold, no version. It loads the unit
+     * only to authorise the write and to answer with a complete `Unit`.
+     *
+     * A ping older than the stored one is dropped rather than rejected —
+     * out-of-order delivery is normal for telemetry, not a client error — and
+     * a dropped ping publishes nothing, so consumers never see a unit jump
+     * backwards. Either way the response is the unit's real current state, so
+     * a client that pings with a stale clock still gets the truth back.
+     */
+    updateLocation: (call, callback) => {
+      void (async () => {
+        try {
+          const { id, location, recordedAt } = call.request;
+          if (!location) throw new InvariantError('location is required');
+          if (!recordedAt) throw new InvariantError('recordedAt is required');
+          const row = await loadView(deps.db, id);
+          if (!row) {
+            throw Object.assign(new Error(`unit '${id}' not found`), {
+              code: grpc.status.NOT_FOUND,
+            });
+          }
+          // Reuses `setUnitStatus` rather than introducing a new action: the
+          // subject shape and the grant matrix would be identical (a
+          // responder writes its own unit by id, a dispatcher any unit in
+          // tier), so a separate verb would be a synonym, not a distinction.
+          ensureAllowed(
+            readOperatorContext(call.metadata),
+            'setUnitStatus',
+            caslSubject('Unit', { id, tier: row.state.tier }),
+          );
+          const point: GeoPoint = { lat: location.lat, lng: location.lng };
+          const applied = await recordPosition(deps.db, {
+            unitId: id,
+            location: point,
+            recordedAt,
+          });
+          if (applied) {
+            // Same branch as the publish, deliberately: a ping that lost the
+            // recorded_at guard must not enter the trail either, or the
+            // breadcrumb could show a point the unit's position never was.
+            if (deps.redis) {
+              await appendTrack(deps.redis, {
+                unitId: id,
+                location: point,
+                recordedAt,
+                windowMs: deps.trackWindowMs ?? 1_800_000,
+              });
+            }
+            await publish(deps, subjects.UnitLocationUpdated, UnitLocationUpdatedSchema, {
+              eventId: newId(),
+              occurredAt: recordedAt,
+              // Keyed on the sample time, not the publish time: a redelivery
+              // of the same ping must dedupe to the same key.
+              idempotencyKey: `unit:${id}:pos:${recordedAt}`,
+              unitId: id,
+              tier: row.state.tier,
+              location: point,
+            });
+          }
+          callback(null, {
+            unit: toProtoUnit(
+              row.id,
+              row.state,
+              row.version,
+              applied ? point : (row.location ?? null),
+            ),
           });
         } catch (err) {
           callback(mapError(err), null);

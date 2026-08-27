@@ -1,4 +1,4 @@
-import { type Incident, IncidentV1 } from '@cad/proto';
+import { type Incident, type IncidentHistoryEntry, IncidentV1 } from '@cad/proto';
 import * as grpc from '@grpc/grpc-js';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
@@ -71,6 +71,29 @@ const PROTO_TO_STATE: Record<IncidentV1.IncidentState, WireState | null> = {
   [IncidentV1.IncidentState.ON_SCENE]: 'onScene',
   [IncidentV1.IncidentState.RESOLVED]: 'resolved',
   [IncidentV1.IncidentState.CANCELLED]: 'cancelled',
+};
+
+/** Timeline entry types, ADR-0006. Lowercase on the wire like every other. */
+type WireEventType =
+  | 'opened'
+  | 'triaged'
+  | 'dispatched'
+  | 'enRoute'
+  | 'unitArrived'
+  | 'resolved'
+  | 'cancelled'
+  | 'majorDeclared';
+
+const PROTO_TO_EVENT_TYPE: Record<IncidentV1.IncidentEventType, WireEventType | null> = {
+  [IncidentV1.IncidentEventType.UNSPECIFIED]: null,
+  [IncidentV1.IncidentEventType.OPENED]: 'opened',
+  [IncidentV1.IncidentEventType.TRIAGED]: 'triaged',
+  [IncidentV1.IncidentEventType.DISPATCHED]: 'dispatched',
+  [IncidentV1.IncidentEventType.EN_ROUTE]: 'enRoute',
+  [IncidentV1.IncidentEventType.UNIT_ARRIVED]: 'unitArrived',
+  [IncidentV1.IncidentEventType.RESOLVED]: 'resolved',
+  [IncidentV1.IncidentEventType.CANCELLED]: 'cancelled',
+  [IncidentV1.IncidentEventType.MAJOR_DECLARED]: 'majorDeclared',
 };
 
 // --- response shape --------------------------------------------------------
@@ -212,6 +235,46 @@ const ListQuerySchema = z.object({
   limit: z.coerce.number().int().positive().optional(),
 });
 
+/**
+ * One timeline entry on the wire. Detail fields are omitted rather than sent
+ * empty, so a consumer can't mistake "this event type has no unit" for "the
+ * unit was the empty string".
+ *
+ * `actor` is null for a system-driven transition — a unit reporting en route
+ * or on scene moves the incident with no operator involved, and the console
+ * renders those rows without a name rather than inventing one.
+ */
+interface HistoryEntryJson {
+  type: WireEventType;
+  occurredAt: string;
+  version: number;
+  actor: string | null;
+  severity?: WireSeverity;
+  unitIds?: string[];
+  unitId?: string;
+  reason?: string;
+}
+
+function historyToJson(entry: IncidentHistoryEntry): HistoryEntryJson {
+  const type = PROTO_TO_EVENT_TYPE[entry.type];
+  if (!type) {
+    // The incident service never emits UNSPECIFIED on a persisted event;
+    // treat it as an upstream contract violation rather than guessing.
+    throw new Error('incident service returned an unspecified event type');
+  }
+  const severity = PROTO_TO_SEVERITY[entry.severity];
+  return {
+    type,
+    occurredAt: entry.occurredAt,
+    version: Number(entry.version),
+    actor: entry.actor === '' ? null : entry.actor,
+    ...(severity ? { severity } : {}),
+    ...(entry.unitIds.length > 0 ? { unitIds: entry.unitIds } : {}),
+    ...(entry.unitId === '' ? {} : { unitId: entry.unitId }),
+    ...(entry.reason === '' ? {} : { reason: entry.reason }),
+  };
+}
+
 // --- error mapping ---------------------------------------------------------
 
 function isServiceError(err: unknown): err is grpc.ServiceError {
@@ -343,6 +406,24 @@ export function registerIncidentRoutes(
       const res = await client.get({ id: params.data.id }, operatorMetadata(session));
       if (!res.incident) throw new Error('incident service returned no incident');
       return reply.send({ incident: toJson(res.incident) });
+    } catch (err) {
+      return replyError(reply, err);
+    }
+  });
+
+  /**
+   * The incident's timeline (ADR-0006) — the aggregate's own event log,
+   * oldest first, so system-driven transitions appear alongside operator
+   * actions. Same `view` gate as the single GET it sits beside.
+   */
+  app.get('/api/incidents/:id/history', async (req, reply) => {
+    const params = IdParamsSchema.safeParse(req.params);
+    if (!params.success) return replyValidation(reply, params.error);
+    const session = await requireAbility(req, reply, gate, 'view', { kind: 'Incident' });
+    if (!session) return reply;
+    try {
+      const res = await client.getHistory({ id: params.data.id }, operatorMetadata(session));
+      return reply.send({ entries: res.entries.map(historyToJson) });
     } catch (err) {
       return replyError(reply, err);
     }

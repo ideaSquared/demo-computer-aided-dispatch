@@ -100,6 +100,39 @@ export async function upsertPosition(db: DbClient, args: UpsertPositionArgs): Pr
 }
 
 /**
+ * Apply a position ping. Moves the point and nothing else — status, tier and
+ * `version` are left alone, because telemetry carries no aggregate version to
+ * advance (ADR-0003).
+ *
+ * Guarded on `updated_at` rather than `version` for the same reason. This is
+ * a redelivery guard only: service.resource already drops out-of-order pings
+ * before publishing, so it is the authority on ordering, and this is the
+ * belt to its braces. One consequence worth knowing — a lifecycle event
+ * stamps `updated_at` from the publishing service's clock while a ping stamps
+ * it from the reporting device's, so a ping sampled just before a status
+ * change can lose the comparison and be skipped. At 1 Hz the next ping
+ * arrives a second later, so the marker doesn't visibly stall.
+ *
+ * A ping for a unit we've never seen is a no-op: without a registration we
+ * have no tier or status to invent, and fabricating a row would put a unit on
+ * the map with a made-up state. Same reasoning as the status-only path above.
+ */
+export async function movePosition(
+  db: DbClient,
+  args: { unitId: string; location: { lat: number; lng: number }; occurredAt: string },
+): Promise<boolean> {
+  const { unitId, location, occurredAt } = args;
+  const rows = await db<Array<{ unit_id: string }>>`
+    UPDATE unit_positions SET
+      location   = ST_SetSRID(ST_MakePoint(${location.lng}, ${location.lat}), 4326)::geography,
+      updated_at = ${occurredAt}
+    WHERE unit_id = ${unitId} AND updated_at < ${occurredAt}
+    RETURNING unit_id
+  `;
+  return rows.length > 0;
+}
+
+/**
  * KNN query. Filters tier and/or status when supplied; the GiST index on
  * `location` answers the `ORDER BY location <-> origin` clause in O(log n)
  * time (verified with `EXPLAIN ANALYZE` — see services/service.geo/README).

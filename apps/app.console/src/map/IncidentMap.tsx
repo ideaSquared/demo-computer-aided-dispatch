@@ -8,6 +8,8 @@ import type { Identity } from '../presence/identity.js';
 import type { Incident, Severity } from '../services/incident.js';
 import type { Unit, UnitState } from '../services/units.js';
 import { UNIT_STATES } from '../services/units.js';
+import { IncidentTimeline } from '../timeline/IncidentTimeline.js';
+import { useTimeline } from '../timeline/useTimeline.js';
 import * as styles from './IncidentMap.css.js';
 import { LeafletMap } from './LeafletMap.js';
 
@@ -59,6 +61,26 @@ export function IncidentMap({ identity, incidents: source, fleet }: IncidentMapP
   const selectedUnit =
     selectedUnitId !== null ? (units.find((u) => u.id === selectedUnitId) ?? null) : null;
 
+  // The timeline covers whichever thing is selected, and — when an incident
+  // is selected — the first unit assigned to it, so the scrubber can move the
+  // event log and that unit's trail together.
+  const trailUnitId = selectedUnit?.id ?? selected?.unitIds?.[0] ?? null;
+  const timeline = useTimeline({
+    incidentId: selected?.id ?? null,
+    unitId: trailUnitId,
+    // Re-read whenever the underlying rosters change: both are already
+    // reconciled from the WS deltas, so this piggybacks on that rather than
+    // opening a second subscription.
+    revision: incidents.length + units.length,
+  });
+  const trail = useMemo(
+    () =>
+      timeline.trackUpToCursor
+        .map((p) => p.location)
+        .filter((l): l is NonNullable<typeof l> => l !== null),
+    [timeline.trackUpToCursor],
+  );
+
   // Stable callbacks so the LeafletMap marker-diff effects don't re-run on
   // every render and rebuild click handlers.
   const handleIncidentClick = useCallback((id: string) => {
@@ -100,6 +122,7 @@ export function IncidentMap({ identity, incidents: source, fleet }: IncidentMapP
           units={units}
           onIncidentClick={handleIncidentClick}
           onUnitClick={handleUnitClick}
+          trail={trail}
         />
 
         <div className={styles.sidebar}>
@@ -113,6 +136,8 @@ export function IncidentMap({ identity, incidents: source, fleet }: IncidentMapP
               operatorId={identity.operatorId}
             />
           )}
+
+          <IncidentTimeline timeline={timeline} units={units} />
 
           <Stack gap="8">
             <h3 className={styles.subheading}>no location ({unlocated.length})</h3>

@@ -12,6 +12,13 @@ import type { TopicRegistry } from './registry.js';
 
 const HEARTBEAT_MS = 30_000;
 
+/**
+ * Frames buffered per socket while its session is still being validated.
+ * A client sends one or two (`subscribe`) in that window; anything wildly
+ * beyond that is not a client we want to keep buffering for.
+ */
+const MAX_PENDING_FRAMES = 32;
+
 function send(socket: WebSocket, msg: ServerMessage): void {
   if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(msg));
 }
@@ -98,6 +105,34 @@ export function makeConnectionHandler(opts: {
   const { nats, registry, forwarder, log, authClient, devAuthBypass } = opts;
 
   return (socket: WebSocket, req: FastifyRequest) => {
+    /**
+     * Frames that arrived before the session finished validating.
+     *
+     * The listener below is attached SYNCHRONOUSLY, which matters more than
+     * it looks: `readSession` is a gRPC round trip to the auth service for
+     * any real cookie, and every client subscribes the instant the socket
+     * opens. Registering the handler after that await dropped those frames
+     * on the floor with no error — so an authenticated operator subscribed
+     * to `units`, was told nothing was wrong, and never received a single
+     * event. The dev-bypass path resolved without a gRPC call and beat the
+     * race, which is why it worked and only real logins were broken.
+     */
+    const pending: Buffer[] = [];
+    let handleMessage: ((raw: Buffer) => void) | null = null;
+    socket.on('message', (raw: Buffer) => {
+      if (handleMessage) {
+        handleMessage(raw);
+        return;
+      }
+      // Bounded: an unauthenticated peer must not be able to make us buffer
+      // for free. Well past what a client sends before its session resolves.
+      if (pending.length >= MAX_PENDING_FRAMES) {
+        socket.close(1008, 'too many frames before authentication');
+        return;
+      }
+      pending.push(raw);
+    });
+
     void (async () => {
       const session = await readSession(req, authClient, devAuthBypass, log);
       if (!session) {
@@ -123,7 +158,7 @@ export function makeConnectionHandler(opts: {
         socket.ping();
       }, HEARTBEAT_MS);
 
-      socket.on('message', (raw: Buffer) => {
+      handleMessage = (raw: Buffer) => {
         let parsed: unknown;
         try {
           parsed = JSON.parse(raw.toString());
@@ -174,7 +209,7 @@ export function makeConnectionHandler(opts: {
             send(socket, { type: 'error', code: 'publish_failed' });
           });
         }
-      });
+      };
 
       socket.on('close', () => {
         clearInterval(heartbeat);
@@ -189,6 +224,12 @@ export function makeConnectionHandler(opts: {
       // subscribe to 'presence' explicitly for the roster view.
       registry.add(socket, `operator:${session.operator.id}`);
       void forwarder; // forwarder is wired via the registry callbacks
+
+      // Drain anything the client sent while the session was validating, in
+      // arrival order, now that the handler exists.
+      for (const raw of pending.splice(0)) {
+        handleMessage(raw);
+      }
     })();
   };
 }

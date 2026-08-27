@@ -15,6 +15,9 @@ export const subjects = {
   IncidentAiSuggestionUpdated: 'incident.aiSuggestionUpdated',
   UnitRegistered: 'unit.registered',
   UnitStatusChanged: 'unit.statusChanged',
+  // Position telemetry, NOT a lifecycle event — see ADR-0003. Deliberately
+  // outside the aggregate's event log, so it carries no `version`.
+  UnitLocationUpdated: 'unit.locationUpdated',
   AuditActionTaken: 'audit.actionTaken',
   PresenceChanged: 'presence.changed',
   // Triage classifier output — emitted by service.triage, consumed by
