@@ -65,6 +65,19 @@ it. It does not silently fall back to straight-line movement: a sandbox that
 quietly simulates something other than what it claims is worse than one that
 refuses to start.
 
+**Only one simulator runs at a time**, enforced by binding a loopback port at
+startup. This is the same class of problem as the handover rule below, with a
+worse failure mode: two simulators each keep their own route for the same unit
+and ping independently, so the stored positions alternate between two paths
+and the breadcrumb zigzags into a fan. Nothing errors — the units just appear
+to teleport, and the trail looks like a triangle rather than a road. A port is
+the mutex rather than a lock file because the OS releases it however the
+process dies; a lock file survives a kill and then blocks every later run
+until someone deletes it by hand, which is worse than the problem it solves.
+Redis would work too, but the simulator holds no infrastructure connections
+and this isn't a good enough reason to give it one. `SIM_LOCK_PORT` overrides
+it for anyone who genuinely wants two.
+
 **The simulator yields a unit the moment a human touches it.** This is not a
 detail — the simulator drives exactly the transitions the responder MDT
 exposes as buttons (`dispatched → enRoute → onScene → available`, see

@@ -26,6 +26,8 @@
  * so there is nothing to clean up afterwards.
  */
 
+import { createServer } from 'node:net';
+
 type Tier = 'police' | 'medical' | 'fire';
 type UnitStatus = 'available' | 'dispatched' | 'enRoute' | 'onScene' | 'outOfService';
 type Severity = 'low' | 'medium' | 'high' | 'critical';
@@ -42,6 +44,23 @@ const BASE = `http://${HOST}:${PORT}`;
  * to both, which is why it can stay on `localhost`.
  */
 const OSRM = process.env.SIM_OSRM ?? 'http://127.0.0.1:5055';
+
+/**
+ * Single-instance guard. A bound port, not a lock file or a Redis key.
+ *
+ * Two simulators is a genuinely baffling failure from the UI: each keeps its
+ * own route for the same unit and pings independently, so positions alternate
+ * between two paths and the breadcrumb zigzags into a fan. Nothing errors —
+ * the units simply appear to teleport.
+ *
+ * A port is the right mutex here because the OS releases it however the
+ * process dies. A lock file survives a kill -9 and then blocks every later
+ * run until someone deletes it by hand, which is a worse problem than the one
+ * it solves. Redis would work too, but the simulator is deliberately an
+ * ordinary HTTP client of the gateway (ADR-0004) — it holds no infrastructure
+ * connections, and this isn't a good enough reason to give it one.
+ */
+const LOCK_PORT = Number(process.env.SIM_LOCK_PORT ?? '5099');
 
 const TICK_MS = Number(process.env.SIM_TICK_MS ?? '1000');
 /** Mean gap between new calls. Poisson, so the actual gaps vary a lot. */
@@ -501,7 +520,38 @@ async function waitFor(what: string, probe: () => Promise<boolean>, hint: string
   }
 }
 
+/**
+ * Claim the single-instance lock, or explain why we can't. The listener is
+ * kept for the lifetime of the process; it serves nothing.
+ */
+async function claimLock(): Promise<void> {
+  await new Promise<void>((resolve) => {
+    const server = createServer();
+    server.once('error', (err: NodeJS.ErrnoException) => {
+      if (err.code === 'EADDRINUSE') {
+        console.error('[sim] another simulator is already running — refusing to start a second.');
+        console.error('[sim]   two simulators drive the same units along different routes, which');
+        console.error('[sim]   looks like units teleporting rather than like an error.');
+        console.error(
+          '[sim]   stop the other one first, or set SIM_LOCK_PORT to run deliberately.',
+        );
+        process.exit(1);
+      }
+      // Anything else: the guard is not worth failing the run over.
+      log(`could not claim the single-instance lock (${err.code ?? 'unknown'}) — continuing`);
+      resolve();
+    });
+    server.once('listening', () => {
+      // Don't hold the event loop open on the guard's account.
+      server.unref();
+      resolve();
+    });
+    server.listen(LOCK_PORT, '127.0.0.1');
+  });
+}
+
 async function main(): Promise<void> {
+  await claimLock();
   log(`gateway ${BASE}, routing ${OSRM}`);
 
   await waitFor(
