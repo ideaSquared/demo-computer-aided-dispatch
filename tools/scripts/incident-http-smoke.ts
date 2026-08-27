@@ -120,8 +120,13 @@ async function main(): Promise<void> {
   if (triageEntry?.severity !== 'high') {
     throw new Error(`history: triage entry lost its severity, got '${triageEntry?.severity}'`);
   }
-  if (triageEntry?.actor !== 'http-smoke') {
-    throw new Error(`history: expected actor 'http-smoke', got '${triageEntry?.actor}'`);
+  // An operator action carries SOME actor, but not the one the body asked
+  // for: the gateway stamps `triagedBy` from the authenticated session and
+  // ignores the client's value, which is exactly right — a caller doesn't get
+  // to name who did something. Under DEV_AUTH_BYPASS that's the bypass
+  // operator, so assert the property rather than a specific id.
+  if (!triageEntry?.actor) {
+    throw new Error(`history: an operator action must carry an actor, got '${triageEntry?.actor}'`);
   }
   if (history.json.entries[0]?.version !== 1 || triageEntry.version !== 2) {
     throw new Error('history: entries do not carry the version each event produced');
