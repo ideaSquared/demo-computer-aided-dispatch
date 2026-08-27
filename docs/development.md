@@ -16,8 +16,7 @@ inner loop.
 # 1. Toolchain: Node 22 LTS + pnpm 11 (see per-OS notes below)
 # 2. From the repo root:
 pnpm install
-pnpm dev:deps      # Postgres + PostGIS, Redis, NATS, Jaeger via Docker
-pnpm dev           # all services + apps in watch mode
+pnpm dev           # deps + every service + app, seeded on first run
 
 # Verify:
 pnpm typecheck && pnpm lint && pnpm test
@@ -141,7 +140,7 @@ interchangeable and share the same dependency stack.
 
 | | **A. Local (host)** | **B. Docker dev** |
 | --- | --- | --- |
-| Command | `pnpm dev:deps` + `pnpm dev` | `pnpm dev:docker` |
+| Command | `pnpm dev` | `pnpm dev:docker` |
 | Services run | on your host via `tsx watch` | inside containers via `tsx watch` |
 | Deps (PG/Redis/NATS/Jaeger) | in Docker | in Docker |
 | Hot reload | edit a service's `src/` → reloads | edit a service's `src/` → synced → reloads |
@@ -159,9 +158,25 @@ The services need Postgres, Redis, NATS, and Jaeger. They run in Docker; your
 code runs on the host.
 
 ```bash
-pnpm dev:deps          # start deps (Postgres/Redis/NATS/Jaeger)
-pnpm dev               # every service + app in watch mode (Turborepo)
-pnpm dev:deps:down     # stop the deps when done
+pnpm dev               # deps + every service + app in watch mode
+pnpm dev:deps:down     # stop the deps when done (Ctrl-C leaves them up)
+```
+
+`pnpm dev` runs [`tools/scripts/dev.ts`](../tools/scripts/dev.ts), which is
+just the preflight you'd otherwise do by hand: create `.env` from
+`.env.example` if it's missing and load it (Turbo 2 no longer reads `.env`
+itself), start the deps and wait for their health checks, refuse to start if a
+service port is already taken — naming the port — and seed demo data once the
+gateway is serving, but only when the stack has no incidents yet. So a restart
+never duplicates the fleet. `SKIP_SEED=1 pnpm dev` skips that last step.
+
+Deps stay up after Ctrl-C on purpose: the next `pnpm dev` is then a few
+seconds rather than a cold Postgres boot.
+
+The deps can still be driven on their own:
+
+```bash
+pnpm dev:deps          # start deps only (Postgres/Redis/NATS/Jaeger)
 ```
 
 Jaeger UI: <http://localhost:16686>. Postgres `localhost:5432`
@@ -269,7 +284,8 @@ It's the only Python in the repo; everything else is TypeScript.
 | `EPERM ... open 'C:\Program Files\nodejs\pnpx'` on `corepack enable` | corepack writing shims into an elevated dir | Use `npm install -g pnpm@11.5.1`, or run the terminal as admin. See [Windows](#windows). |
 | `This version of pnpm requires at least Node.js v22.13` | Node < 22 | Upgrade to Node 22 LTS. |
 | `ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION` | Editing deps with a stricter pnpm policy than the repo's | The repo already sets `minimumReleaseAge: 0`; make sure you didn't override it in a user-level `.npmrc`. |
-| `pnpm dev:deps` → port already allocated | Something else on 5432/6379/4222/16686 | Stop the conflicting service, or edit `infra/docker-compose.deps.yml`. |
+| `pnpm dev` → port already allocated | Another project's Compose stack is on 5432/6379/4222/16686 | `pnpm dev` names the container holding the port — `docker stop <name>`, then re-run. |
+| `pnpm dev` → "these ports are taken" | A previous `pnpm dev` didn't shut down | Close it. Windows also reserves 5040 (CDPSvc), which is why service.resource serves HTTP on 5042. |
 | `pnpm smoke` → `NOT_SERVING` for everything | Deps/services not up, or probing too early | Ensure `pnpm dev:deps` + services are running; smoke retries for 60s per service. |
 | Docker build can't find files / slow on Windows | Repo on the Windows FS but built from WSL | Clone the repo inside the WSL 2 filesystem where you build it. |
 | Vite/Vitest can't resolve a `@cad/*` package | Missing install after adding a workspace dep | Re-run `pnpm install`. |

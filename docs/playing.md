@@ -10,13 +10,18 @@ moving.
 
 ```bash
 pnpm install
-pnpm stack            # builds + runs everything in Docker (Postgres, Redis,
-                      # NATS, Jaeger, every service, and the console)
+pnpm dev              # deps + every service + app, seeded on first run
 ```
 
-`pnpm stack` is the production-like compose (`infra/docker-compose.yml`). For
-the hot-reload dev stack use `pnpm dev:docker` instead. Give it a minute on the
-first run — images build and the incident service migrates its schema on boot.
+That's the whole boot: `pnpm dev` starts the dependency containers, waits for
+them, runs every service and app in watch mode, and seeds demo data when the
+database is empty — so step 2 below is already done for you on a fresh stack.
+
+Two alternatives, both slower to start: `pnpm dev:docker` runs the same
+hot-reload stack entirely in containers (and includes the Python triage
+service), and `pnpm stack` builds the production-like compose
+(`infra/docker-compose.yml`). Give either a minute on the first run — images
+build and each service migrates its schema on boot.
 
 Check everything is up:
 
@@ -34,7 +39,8 @@ Useful endpoints once it's running:
 
 ## 2. Seed some incidents
 
-The console opens onto an empty board on a fresh database. Populate it:
+`pnpm dev` already seeded if the board was empty, so you can skip ahead. To
+add more — or after `pnpm stack`, which doesn't seed:
 
 ```bash
 pnpm seed             # POSTs ~8 incidents across tiers/severities/locations
