@@ -80,7 +80,7 @@ services:
   # Preprocess once, then serve. `osrm-routed` listens on 5000 inside the
   # container, which is the gateway's port on the host — hence the 5055 map.
   osrm:
-    image: osrm/osrm-backend:v5.27.1
+    image: osrm/osrm-backend:v5.25.0
     profiles: ["sim"]
     depends_on:
       osrm-fetch:
