@@ -21,6 +21,35 @@ const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
 let onUnauthorized: (() => void) | null = null;
 
+/**
+ * In-flight refresh, shared by every caller that hits a 401 at once, so a
+ * single expiry rotates the cookies once rather than racing itself.
+ */
+let refreshInFlight: Promise<boolean> | null = null;
+
+/**
+ * Rotate the session cookies. Raw `fetch`, not `authedFetch`, so a failing
+ * refresh can't recurse into itself.
+ */
+async function refreshSession(): Promise<boolean> {
+  refreshInFlight ??= (async () => {
+    try {
+      const csrf = readCookie(CSRF_COOKIE_NAME);
+      const res = await fetch(`${apiBaseUrl}/api/auth/refresh`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: csrf ? { 'x-csrf-token': csrf } : {},
+      });
+      return res.ok;
+    } catch {
+      return false;
+    } finally {
+      refreshInFlight = null;
+    }
+  })();
+  return refreshInFlight;
+}
+
 export function onUnauthorizedResponse(handler: (() => void) | null): void {
   onUnauthorized = handler;
 }
@@ -79,8 +108,26 @@ export async function authedFetch(path: string, init: AuthedFetchInit = {}): Pro
   };
   if (method !== undefined) requestInit.method = method;
   const res = await fetch(`${apiBaseUrl}${path}`, requestInit);
-  if (res.status === 401 && !anonymous) {
+  if (res.status !== 401 || anonymous) return res;
+
+  // Almost always an expired access cookie rather than a dead session — it
+  // lives 15 minutes and nothing pre-schedules a rotation. A responder being
+  // logged out of the MDT mid-incident because a poll crossed that boundary
+  // is the worst possible moment for it. Rotate once and retry first.
+  const refreshed = await refreshSession();
+  if (!refreshed) {
+    onUnauthorized?.();
+    return res;
+  }
+
+  // Refresh rotates the CSRF cookie too, so rebuild the header before retry.
+  if (MUTATING.has(upperMethod)) {
+    const csrf = readCookie(CSRF_COOKIE_NAME);
+    if (csrf) finalHeaders['x-csrf-token'] = csrf;
+  }
+  const retried = await fetch(`${apiBaseUrl}${path}`, { ...requestInit, headers: finalHeaders });
+  if (retried.status === 401) {
     onUnauthorized?.();
   }
-  return res;
+  return retried;
 }
