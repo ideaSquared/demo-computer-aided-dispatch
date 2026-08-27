@@ -173,6 +173,33 @@ never duplicates the fleet. `SKIP_SEED=1 pnpm dev` skips that last step.
 Deps stay up after Ctrl-C on purpose: the next `pnpm dev` is then a few
 seconds rather than a cold Postgres boot.
 
+### The world simulator
+
+`pnpm seed` leaves you with a populated but motionless board. `pnpm sim`
+([`tools/scripts/sim.ts`](../tools/scripts/sim.ts)) runs the stack as a
+working day instead: calls arrive on a Poisson schedule, get triaged and
+dispatched to the nearest available unit, and units drive to them along real
+roads before arriving, working the scene, clearing and returning to station.
+
+```bash
+pnpm sim:deps          # OSRM routing engine (Compose `sim` profile)
+pnpm sim               # drive the world; Ctrl-C to stop
+pnpm sim:deps:down     # stop the routing engine
+```
+
+The first `pnpm sim:deps` downloads a map extract and preprocesses it, which
+takes minutes and a few GB of disk. Both are cached in the `cad-osrm` volume,
+so it happens once per machine — which is why routing is behind a profile and
+not part of `pnpm dev`.
+
+The simulator is an ordinary HTTP client of the gateway, so it exercises the
+same auth, gRPC, event and WebSocket path the console does. It sends
+`expectedVersion` on every status write and releases a unit permanently the
+first time it gets a 409 — so if you take a unit over from the responder app,
+it stops touching that unit. Tuning: `SIM_TICK_MS`, `SIM_INCIDENT_MEAN_MS`,
+`SIM_OSRM`. Rationale in
+[ADR-0004](adr/0004-dev-simulator-and-routing.md).
+
 The deps can still be driven on their own:
 
 ```bash

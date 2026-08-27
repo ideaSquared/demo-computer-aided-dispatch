@@ -52,12 +52,13 @@ real client uses. No production code is added or modified to support it.
 simulator asks OSRM for a route, then walks the returned geometry at a
 per-tier speed, pinging `PATCH /api/units/:id/location` as it goes.
 
-**OSRM is opt-in.** `pnpm dev` does not start it and does not wait on it —
-only `pnpm sim` requires it. First run costs a ~300 MB extract download plus
-an `osrm-extract`/`osrm-partition`/`osrm-customize` preprocessing pass, which
-is a minutes-long, disk-hungry step that has no business sitting between a
-new contributor and a working dev stack. The processed graph is cached in a
-named volume, so it is a one-time cost.
+**OSRM is opt-in.** It sits behind a Compose `sim` profile, so `pnpm dev`
+neither starts it nor waits on it; `pnpm sim:deps` brings it up. First run
+downloads a map extract and runs an
+`osrm-extract`/`osrm-partition`/`osrm-customize` pass — a minutes-long,
+disk-hungry step that has no business sitting between a new contributor and a
+working dev stack. Both the extract and the processed graph are cached in a
+named volume, so it is a one-time cost per machine.
 
 If OSRM is unreachable, `pnpm sim` exits with a message saying how to start
 it. It does not silently fall back to straight-line movement: a sandbox that
@@ -91,10 +92,12 @@ status write and then applied to both.
   duration alongside the geometry. We are not wiring that into dispatch here
   — it is a separate change to a real contract — but the data is now there,
   and that is the strongest argument for routing over interpolation.
-- **`pnpm dev` grows a fourth-tier dependency**, even opt-in. The deps compose
-  file goes from four well-understood infrastructure containers to five, one
-  of which needs a data file and a build step. Documented in the README under
-  the simulator, not in the getting-started path.
+- **The deps stack grows a container that isn't infrastructure.** Four
+  well-understood services become six, and the new pair needs a downloaded
+  data file and a build step before it can answer anything. The profile keeps
+  it out of the default path, and it is documented under the simulator rather
+  than in getting-started, but it is one more thing that can be broken on
+  someone's machine.
 - The simulator will be the loudest client in the system, and it will find
   ordering and concurrency bugs by volume. That is a feature, but it means a
   failing `pnpm sim` is not automatically a simulator bug — triage it as a

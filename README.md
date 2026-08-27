@@ -37,6 +37,17 @@ it; deps keep running (`pnpm dev:deps:down` to stop those too).
 
 `SKIP_SEED=1 pnpm dev` skips the seed. `pnpm seed` re-runs it by hand.
 
+To watch it run on its own — calls arriving, units driving to them along real
+roads, arriving, clearing and heading back to station:
+
+```bash
+pnpm sim:deps           # routing engine; first run builds a map extract (slow, once)
+pnpm sim                # the world starts moving
+```
+
+Take a unit over from the responder app and the simulator stands down on that
+unit for the rest of the run. See [ADR-0004](docs/adr/0004-dev-simulator-and-routing.md).
+
 The alternative mode runs everything in containers instead, including the
 Python triage service that `pnpm dev` leaves out:
 
