@@ -23,15 +23,25 @@ pnpm install
 
 ## Run
 
-Two interchangeable dev modes — both hot-reload:
+Needs Docker running. Then one command:
 
 ```bash
-# A. Local: services on host, deps in Docker
-pnpm dev:deps           # Postgres + PostGIS, Redis, NATS, Jaeger
-pnpm dev                # all services + apps via Turborepo (watch)
+pnpm dev
+```
 
-# B. Docker: everything in containers, source synced from host
-pnpm dev:docker         # docker compose watch — great on Windows
+That creates `.env` from `.env.example` if it's missing, starts the deps
+(Postgres + PostGIS, Redis, NATS, Jaeger) and waits for them, brings up every
+service and app in watch mode, and seeds demo data the first time — so the
+console opens onto a populated board rather than empty screens. Ctrl-C stops
+it; deps keep running (`pnpm dev:deps:down` to stop those too).
+
+`SKIP_SEED=1 pnpm dev` skips the seed. `pnpm seed` re-runs it by hand.
+
+The alternative mode runs everything in containers instead, including the
+Python triage service that `pnpm dev` leaves out:
+
+```bash
+pnpm dev:docker         # docker compose watch — source synced from host
 ```
 
 Jaeger UI at <http://localhost:16686>. Full comparison and the
@@ -98,7 +108,7 @@ repo-side stubs at `docs/prd/<service>.md` link to them.
 | auth           | Login, JWT issuing, CASL ability synthesis.                | 5010 | [services/service.auth](services/service.auth)               | [docs/prd/auth.md](docs/prd/auth.md) |
 | incident       | Incident aggregate (event-sourced state machine).          | 5020 | [services/service.incident](services/service.incident)       | [docs/prd/incident.md](docs/prd/incident.md) |
 | dispatch       | Stateless unit-allocation recommender.                     | 5030 | [services/service.dispatch](services/service.dispatch)       | [docs/prd/dispatch.md](docs/prd/dispatch.md) |
-| resource       | Unit roster, status, last-known location.                  | 5040 | [services/service.resource](services/service.resource)       | [docs/prd/resource.md](docs/prd/resource.md) |
+| resource       | Unit roster, status, last-known location.                  | 5042 | [services/service.resource](services/service.resource)       | [docs/prd/resource.md](docs/prd/resource.md) |
 | geo            | Geocoding, nearest-K, route ETA over PostGIS.              | 5050 | [services/service.geo](services/service.geo)                 | [docs/prd/geo.md](docs/prd/geo.md) |
 | notification   | NATS → Redis fan-out spine for WebSockets.                 | 5065 | [services/service.notification](services/service.notification) | [docs/prd/notification.md](docs/prd/notification.md) |
 | audit          | Append-only audit log consumer.                            | 5070 | [services/service.audit](services/service.audit)             | [docs/prd/audit.md](docs/prd/audit.md) |

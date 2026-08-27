@@ -15,7 +15,7 @@ import { z } from 'zod';
  */
 export const config = loadEnv(
   z.object({
-    PORT: z.coerce.number().default(5040),
+    PORT: z.coerce.number().default(5042),
     GRPC_PORT: z.coerce.number().default(5041),
     DATABASE_URL: z.string().url(),
     DB_SCHEMA: z.string().min(1).default('resource'),

@@ -125,10 +125,10 @@ services:
   service-resource:
     <<: *dev-build
     command: pnpm --filter @cad/service.resource dev
-    ports: ["5040:5040", "5041:5041"]
+    ports: ["5042:5042", "5041:5041"]
     environment:
       <<: *dev-env
-      PORT: "5040"
+      PORT: "5042"
       GRPC_PORT: "5041"
       DATABASE_URL: postgres://cad:cad@postgres:5432/cad
       DB_SCHEMA: resource

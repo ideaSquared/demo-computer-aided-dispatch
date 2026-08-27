@@ -9,7 +9,7 @@ describe('@cad/service.resource config', () => {
 
   it('loads with defaults + the placeholder DATABASE_URL', async () => {
     const { config } = await import('../config.js');
-    expect(config.PORT).toBe(5040);
+    expect(config.PORT).toBe(5042);
     expect(config.GRPC_PORT).toBe(5041);
     expect(config.DB_SCHEMA).toBe('resource');
     expect(config.MIGRATE_ON_BOOT).toBe(false);

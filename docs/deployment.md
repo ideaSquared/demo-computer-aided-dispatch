@@ -28,7 +28,7 @@ dependencies plus nine services.
 | service-auth | … | 5010 | owns schema `auth` |
 | service-incident | … | 5020 | owns schema `incident` |
 | service-dispatch | … | 5030 | stateless |
-| service-resource | … | 5040 | owns schema `resource` |
+| service-resource | … | 5042 | owns schema `resource` |
 | service-geo | … | 5050 | owns schema `geo` |
 | service-notification | … | 5065 | NATS→Redis fan-out (5065, not 5060 — SIP) |
 | service-audit | … | 5070 | owns schema `audit` |
