@@ -23,7 +23,7 @@
     "clean": "rm -rf dist .turbo"
   },
   "dependencies": {
-    "@casl/ability": "^6.7.3"
+    "@casl/ability": "^7.0.0"
   },
   "devDependencies": {
     "@cad/tsconfig": "workspace:*",
